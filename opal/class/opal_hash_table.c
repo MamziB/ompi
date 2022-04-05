@@ -341,7 +341,10 @@ opal_hash_table_get_value_uint32(opal_hash_table_t *ht, uint32_t key, void **val
     }
 #endif
 
-    ht->ht_type_methods = &opal_hash_type_methods_uint32;
+    if (NULL == ht->ht_type_methods) {
+        ht->ht_type_methods = &opal_hash_type_methods_uint32;
+    }
+
     for (ii = key % capacity;; ii += 1) {
         if (ii == capacity) {
             ii = 0;
