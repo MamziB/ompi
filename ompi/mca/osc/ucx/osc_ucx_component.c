@@ -742,7 +742,11 @@ ompi_osc_ucx_shared_query(struct ompi_win_t *win, int rank, size_t *size, int *d
     if (MPI_PROC_NULL != rank) {
         *size = module->sizes[rank];
         *((void**) baseptr) = module->addrs[rank];
-        *disp_unit = module->disp_units[rank];
+        if (module->disp_unit == -1) {
+            *disp_unit = module->disp_units[rank];
+        } else {
+            *disp_unit = module->disp_unit; 
+        }
     } else {
         int i = 0;
 
@@ -753,7 +757,11 @@ ompi_osc_ucx_shared_query(struct ompi_win_t *win, int rank, size_t *size, int *d
             if (0 != module->sizes[i]) {
                 *size = module->sizes[i];
                 *((void**) baseptr) = module->addrs[i];
-                *disp_unit = module->disp_units[i];
+                if (module->disp_unit == -1) {
+                    *disp_unit = module->disp_units[rank];
+                } else {
+                    *disp_unit = module->disp_unit; 
+                }
                 break;
             }
         }
