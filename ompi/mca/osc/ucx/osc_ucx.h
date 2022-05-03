@@ -150,6 +150,9 @@ typedef struct ompi_osc_ucx_lock {
 #define OSC_UCX_GET_EP(comm_, rank_) (ompi_comm_peer_lookup(comm_, rank_)->proc_endpoints[OMPI_PROC_ENDPOINT_TAG_UCX])
 #define OSC_UCX_GET_DISP(module_, rank_) ((module_->disp_unit < 0) ? module_->disp_units[rank_] : module_->disp_unit)
 
+int ompi_osc_ucx_shared_query(struct ompi_win_t *win, int rank, size_t *size,
+        int *disp_unit, void * baseptr);
+
 int ompi_osc_ucx_win_attach(struct ompi_win_t *win, void *base, size_t len);
 int ompi_osc_ucx_win_detach(struct ompi_win_t *win, const void *base);
 int ompi_osc_ucx_free(struct ompi_win_t *win);

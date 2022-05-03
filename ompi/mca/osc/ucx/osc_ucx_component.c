@@ -83,6 +83,8 @@ ompi_osc_ucx_component_t mca_osc_ucx_component = {
 
 ompi_osc_ucx_module_t ompi_osc_ucx_module_template = {
     {
+        .osc_win_shared_query = ompi_osc_ucx_shared_query,
+
         .osc_win_attach = ompi_osc_ucx_win_attach,
         .osc_win_detach = ompi_osc_ucx_win_detach,
         .osc_free = ompi_osc_ucx_free,
@@ -726,6 +728,43 @@ error_nomem:
     return ret;
 #endif
 }
+
+int
+ompi_osc_ucx_shared_query(struct ompi_win_t *win, int rank, size_t *size, int *disp_unit, void *baseptr)
+{
+    ompi_osc_ucx_module_t *module =
+        (ompi_osc_ucx_module_t*) win->w_osc_module;
+
+    if (module->flavor != MPI_WIN_FLAVOR_SHARED) {
+        return MPI_ERR_WIN;
+    }
+
+    if (MPI_PROC_NULL != rank) {
+        *size = module->sizes[rank];
+        *((void**) baseptr) = module->addrs[rank];
+        *disp_unit = module->disp_units[rank];
+    } else {
+        int i = 0;
+
+        *size = 0;
+        *((void**) baseptr) = NULL;
+        *disp_unit = 0;
+        for (i = 0 ; i < ompi_comm_size(module->comm) ; ++i) {
+            if (0 != module->sizes[i]) {
+                *size = module->sizes[i];
+                *((void**) baseptr) = module->addrs[i];
+                *disp_unit = module->disp_units[i];
+                break;
+            }
+        }
+    }
+
+    return OMPI_SUCCESS;
+}
+
+
+
+
 
 static int component_select(struct ompi_win_t *win, void **base, size_t size, int disp_unit,
                             struct ompi_communicator_t *comm, struct opal_info_t *info,
