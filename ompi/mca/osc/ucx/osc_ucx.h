@@ -17,6 +17,9 @@
 #include "opal/mca/common/ucx/common_ucx.h"
 #include "opal/mca/common/ucx/common_ucx_wpool.h"
 
+#include "opal/mca/shmem/shmem.h"
+#include "opal/mca/shmem/base/base.h"
+
 #define OSC_UCX_ASSERT  MCA_COMMON_UCX_ASSERT
 #define OSC_UCX_ERROR   MCA_COMMON_UCX_ERROR
 #define OSC_UCX_VERBOSE MCA_COMMON_UCX_VERBOSE
@@ -36,6 +39,8 @@ typedef struct ompi_osc_ucx_component {
     bool no_locks; /* Default value of the no_locks info key for new windows */
     bool acc_single_intrinsic;
     unsigned int priority;
+    /* directory where to place backing files */
+    char *backing_directory;
 } ompi_osc_ucx_component_t;
 
 OMPI_DECLSPEC extern ompi_osc_ucx_component_t mca_osc_ucx_component;
@@ -120,6 +125,14 @@ typedef struct ompi_osc_ucx_module {
     opal_common_ucx_ctx_t *ctx;
     opal_common_ucx_wpmem_t *mem;
     opal_common_ucx_wpmem_t *state_mem;
+
+    bool noncontig_shared_win;
+    size_t *sizes;
+    void *segment_base;
+    /** opal shared memory structure for the shared memory segment */
+    opal_shmem_ds_t seg_ds;
+
+
 } ompi_osc_ucx_module_t;
 
 typedef enum locktype {
