@@ -477,51 +477,55 @@ component_select_shared_win(struct ompi_win_t *win, void **base, size_t size, in
             total += rbuf[i];
         }
 
-        /* user opal/shmem directly to create a shared memory segment */
-        if (0 == ompi_comm_rank (module->comm)) {
-            char *data_file;
-            ret = opal_asprintf (&data_file, "%s" OPAL_PATH_SEP "osc_ucx.%s.%x.%d.%s",
-                                 mca_osc_ucx_component.backing_directory, ompi_process_info.nodename,
-                                 OMPI_PROC_MY_NAME->jobid, (int) OMPI_PROC_MY_NAME->vpid,
-                                 ompi_comm_print_cid(module->comm));
-            if (ret < 0) {
-                free(rbuf);
-                return OMPI_ERR_OUT_OF_RESOURCE;
+        if (total != 0) {
+            /* user opal/shmem directly to create a shared memory segment */
+            if (0 == ompi_comm_rank (module->comm)) {
+                char *data_file;
+                ret = opal_asprintf (&data_file, "%s" OPAL_PATH_SEP "osc_ucx.%s.%x.%d.%s",
+                                     mca_osc_ucx_component.backing_directory, ompi_process_info.nodename,
+                                     OMPI_PROC_MY_NAME->jobid, (int) OMPI_PROC_MY_NAME->vpid,
+                                     ompi_comm_print_cid(module->comm));
+                if (ret < 0) {
+                    free(rbuf);
+                    return OMPI_ERR_OUT_OF_RESOURCE;
+                }
+
+                ret = opal_shmem_segment_create (&module->seg_ds, data_file, total);
+                free(data_file);
+                if (OPAL_SUCCESS != ret) {
+                    free(rbuf);
+                    goto error;
+                }
+
+                unlink_needed = true;
             }
 
-            ret = opal_shmem_segment_create (&module->seg_ds, data_file, total);
-            free(data_file);
-            if (OPAL_SUCCESS != ret) {
+            ret = module->comm->c_coll->coll_bcast (&module->seg_ds, sizeof (module->seg_ds), MPI_BYTE, 0,
+                                                    module->comm, module->comm->c_coll->coll_bcast_module);
+            if (OMPI_SUCCESS != ret) {
                 free(rbuf);
                 goto error;
             }
 
-            unlink_needed = true;
-        }
+            module->segment_base = opal_shmem_segment_attach (&module->seg_ds);
+            if (NULL == module->segment_base) {
+                free(rbuf);
+                goto error;
+            }
 
-        ret = module->comm->c_coll->coll_bcast (&module->seg_ds, sizeof (module->seg_ds), MPI_BYTE, 0,
-                                                module->comm, module->comm->c_coll->coll_bcast_module);
-        if (OMPI_SUCCESS != ret) {
-            free(rbuf);
-            goto error;
-        }
+            /* wait for all processes to attach */
+            ret = module->comm->c_coll->coll_barrier (module->comm, module->comm->c_coll->coll_barrier_module);
+            if (OMPI_SUCCESS != ret) {
+                free(rbuf);
+                goto error;
+            }
 
-        module->segment_base = opal_shmem_segment_attach (&module->seg_ds);
-        if (NULL == module->segment_base) {
-            free(rbuf);
-            goto error;
-        }
-
-        /* wait for all processes to attach */
-        ret = module->comm->c_coll->coll_barrier (module->comm, module->comm->c_coll->coll_barrier_module);
-        if (OMPI_SUCCESS != ret) {
-            free(rbuf);
-            goto error;
-        }
-
-        if (0 == ompi_comm_rank (module->comm)) {
-            opal_shmem_unlink (&module->seg_ds);
-            unlink_needed = false;
+            if (0 == ompi_comm_rank (module->comm)) {
+                opal_shmem_unlink (&module->seg_ds);
+                unlink_needed = false;
+            }
+        } else {
+            module->segment_base = NULL; 
         }
 
         module->sizes = malloc(sizeof(size_t) * comm_size);
