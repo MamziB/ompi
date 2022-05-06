@@ -316,425 +316,8 @@ static const char* ompi_osc_ucx_set_no_lock_info(opal_infosubscriber_t *obj, con
     return module->no_locks ? "true" : "false";
 }
 
-static int
-component_select_shared_win(struct ompi_win_t *win, void **base, size_t size, int disp_unit,
-                 struct ompi_communicator_t *comm, struct opal_info_t *info,
-                 int flavor, int *model)
-{
-#if 0
-    ompi_osc_sm_module_t *module = NULL;
-    int comm_size = ompi_comm_size (comm);
-    bool unlink_needed = false;
-    int ret = OMPI_ERROR;
-    size_t memory_alignment = OPAL_ALIGN_MIN;
-#endif
-    ompi_osc_ucx_module_t *module = NULL;
-    char *name = NULL;
-    long values[2];
-    int ret = OMPI_SUCCESS;
-    //ucs_status_t status;
-    int i, comm_size = ompi_comm_size(comm);
-    bool env_initialized = false;
-    void *state_base = NULL;
-    opal_common_ucx_mem_type_t mem_type;
-    uint64_t zero = 0;
-    char *my_mem_addr;
-    int my_mem_addr_size;
-    void * my_info = NULL;
-    char *recv_buf = NULL;
-    unsigned long total, *rbuf;
-    int flag;
-    size_t pagesize;
-    bool unlink_needed = false;
-
-
-    assert(MPI_WIN_FLAVOR_SHARED == flavor);
-
-    if (ompi_group_have_remote_peers(comm->c_local_group)) {
-        return OMPI_ERR_RMA_SHARED;
-    }
-
-    /* create module structure */
-    module = (ompi_osc_ucx_module_t *)calloc(1, sizeof(ompi_osc_ucx_module_t));
-    if (module == NULL) {
-        ret = OMPI_ERR_TEMP_OUT_OF_RESOURCE;
-        goto error_nomem;
-    }
-#if 0
-    module = (ompi_osc_sm_module_t*)
-        calloc(1, sizeof(ompi_osc_sm_module_t));
-    if (NULL == module) return OMPI_ERR_TEMP_OUT_OF_RESOURCE;
-
-    win->w_osc_module = &module->super;
-
-    OBJ_CONSTRUCT(&module->lock, opal_mutex_t);
-
-    if (NULL != info) {
-        ompi_osc_base_set_memory_alignment(info, &memory_alignment);
-    }
-#endif
-
-    /* fill in the function pointer part */
-    memcpy(module, &ompi_osc_ucx_module_template, sizeof(ompi_osc_base_module_t));
-
-    /* need our communicator for collectives in next phase */
-    ret = ompi_comm_dup(comm, &module->comm);
-    if (ret != OMPI_SUCCESS) {
-        goto error;
-    }
-
-    *model = MPI_WIN_UNIFIED;
-    opal_asprintf(&name, "ucx window %s", ompi_comm_print_cid(module->comm));
-    ompi_win_set_name(win, name);
-    free(name);
-
-    module->flavor = flavor;
-    module->size = size;
-    module->no_locks = check_config_value_bool ("no_locks", info);
-    module->acc_single_intrinsic = check_config_value_bool ("acc_single_intrinsic", info);
-
-    /* share everyone's displacement units. Only do an allgather if
-       strictly necessary, since it requires O(p) state. */
-    values[0] = disp_unit;
-    values[1] = -disp_unit;
-
-    ret = module->comm->c_coll->coll_allreduce(MPI_IN_PLACE, values, 2, MPI_LONG,
-                                               MPI_MIN, module->comm,
-                                               module->comm->c_coll->coll_allreduce_module);
-    if (OMPI_SUCCESS != ret) {
-        goto error;
-    }
-
-    if (values[0] == -values[1]) { /* everyone has the same disp_unit, we do not need O(p) space */
-        module->disp_unit = disp_unit;
-    } else { /* different disp_unit sizes, allocate O(p) space to store them */
-        module->disp_unit = -1;
-        module->disp_units = calloc(comm_size, sizeof(int));
-        if (module->disp_units == NULL) {
-            ret = OMPI_ERR_TEMP_OUT_OF_RESOURCE;
-            goto error;
-        }
-
-        ret = module->comm->c_coll->coll_allgather(&disp_unit, 1, MPI_INT,
-                                                   module->disp_units, 1, MPI_INT,
-                                                   module->comm,
-                                                   module->comm->c_coll->coll_allgather_module);
-        if (OMPI_SUCCESS != ret) {
-            goto error;
-        }
-    }
-
-    ret = opal_common_ucx_wpctx_create(mca_osc_ucx_component.wpool, comm_size,
-                                     &exchange_len_info, (void *)module->comm,
-                                     &module->ctx);
-    if (OMPI_SUCCESS != ret) {
-        goto error;
-    }
-
-#if 0
-    module->flavor = flavor;
-#endif 
-
-    /* create the segment */
-    {    
-        opal_output_verbose(MCA_BASE_VERBOSE_DEBUG, ompi_osc_base_framework.framework_output,
-                            "allocating shared memory region of size %ld\n", (long) size);
-        /* get the pagesize */
-        pagesize = opal_getpagesize();
-
-        rbuf = malloc(sizeof(unsigned long) * comm_size);
-        if (NULL == rbuf) return OMPI_ERR_TEMP_OUT_OF_RESOURCE;
-
-        /* Note that the alloc_shared_noncontig info key only has
-         * meaning during window creation.  Once the window is
-         * created, we can't move memory around without making
-         * everything miserable.  So we intentionally do not subcribe
-         * to updates on the info key, because there's no useful
-         * update to occur. */
-        module->noncontig_shared_win = false;
-        if (OMPI_SUCCESS != opal_info_get_bool(info, "alloc_shared_noncontig",
-                                               &module->noncontig_shared_win, &flag)) {
-            goto error;
-        }
-
-        if (module->noncontig_shared_win) {
-            opal_output_verbose(MCA_BASE_VERBOSE_DEBUG, ompi_osc_base_framework.framework_output,
-                                "allocating window using non-contiguous strategy");
-            total = ((size - 1) / pagesize + 1) * pagesize;
-        } else {
-            opal_output_verbose(MCA_BASE_VERBOSE_DEBUG, ompi_osc_base_framework.framework_output,
-                                "allocating window using contiguous strategy");
-            total = size;
-        }
-        ret = module->comm->c_coll->coll_allgather(&total, 1, MPI_UNSIGNED_LONG,
-                                                  rbuf, 1, MPI_UNSIGNED_LONG,
-                                                  module->comm,
-                                                  module->comm->c_coll->coll_allgather_module);
-        if (OMPI_SUCCESS != ret) return ret;
-
-        total = 0;
-        for (i = 0 ; i < comm_size ; ++i) {
-            total += rbuf[i];
-        }
-
-        if (total != 0) {
-            /* user opal/shmem directly to create a shared memory segment */
-            if (0 == ompi_comm_rank (module->comm)) {
-                char *data_file;
-                ret = opal_asprintf (&data_file, "%s" OPAL_PATH_SEP "osc_ucx.%s.%x.%d.%s",
-                                     mca_osc_ucx_component.backing_directory, ompi_process_info.nodename,
-                                     OMPI_PROC_MY_NAME->jobid, (int) OMPI_PROC_MY_NAME->vpid,
-                                     ompi_comm_print_cid(module->comm));
-                if (ret < 0) {
-                    free(rbuf);
-                    return OMPI_ERR_OUT_OF_RESOURCE;
-                }
-
-                ret = opal_shmem_segment_create (&module->seg_ds, data_file, total);
-                free(data_file);
-                if (OPAL_SUCCESS != ret) {
-                    free(rbuf);
-                    goto error;
-                }
-
-                unlink_needed = true;
-            }
-
-            ret = module->comm->c_coll->coll_bcast (&module->seg_ds, sizeof (module->seg_ds), MPI_BYTE, 0,
-                                                    module->comm, module->comm->c_coll->coll_bcast_module);
-            if (OMPI_SUCCESS != ret) {
-                free(rbuf);
-                goto error;
-            }
-
-            module->segment_base = opal_shmem_segment_attach (&module->seg_ds);
-            if (NULL == module->segment_base) {
-                free(rbuf);
-                goto error;
-            }
-
-            /* wait for all processes to attach */
-            ret = module->comm->c_coll->coll_barrier (module->comm, module->comm->c_coll->coll_barrier_module);
-            if (OMPI_SUCCESS != ret) {
-                free(rbuf);
-                goto error;
-            }
-
-            if (0 == ompi_comm_rank (module->comm)) {
-                opal_shmem_unlink (&module->seg_ds);
-                unlink_needed = false;
-            }
-        } else {
-            module->segment_base = NULL; 
-        }
-
-        module->sizes = malloc(sizeof(size_t) * comm_size);
-        if (NULL == module->sizes) return OMPI_ERR_TEMP_OUT_OF_RESOURCE;
-        module->addrs = malloc(sizeof(uint64_t) * comm_size);
-        if (NULL == module->addrs) return OMPI_ERR_TEMP_OUT_OF_RESOURCE;
-
-
-        for (i = 0, total = 0; i < comm_size ; ++i) {
-            module->sizes[i] = rbuf[i];
-            if (module->sizes[i] || !module->noncontig_shared_win) {
-                module->addrs[i] = ((uint64_t) module->segment_base) + total;
-                total += rbuf[i];
-            } else {
-                module->addrs[i] = (uint64_t)NULL;
-            }
-        }
-
-        free(rbuf);
-    }
-
-    total = module->sizes[ompi_comm_rank(module->comm)];
-    *base = module->addrs[ompi_comm_rank(module->comm)];
-
-    mem_type = OPAL_COMMON_UCX_MEM_MAP;
-    ret = opal_common_ucx_wpmem_create(module->ctx, base, total,
-                                     mem_type, &exchange_len_info,
-                                     OPAL_COMMON_UCX_WPMEM_ADDR_EXCHANGE_FULL,
-                                     (void *)module->comm,
-                                       &my_mem_addr, &my_mem_addr_size,
-                                       &module->mem);
-    if (ret != OMPI_SUCCESS) {
-        goto error;
-    }
-
-    state_base = (void *)&(module->state);
-    ret = opal_common_ucx_wpmem_create(module->ctx, &state_base,
-                                     sizeof(ompi_osc_ucx_state_t),
-                                     OPAL_COMMON_UCX_MEM_MAP,
-                                     &exchange_len_info,
-                                     OPAL_COMMON_UCX_WPMEM_ADDR_EXCHANGE_FULL,
-                                     (void *)module->comm,
-                                     &my_mem_addr, &my_mem_addr_size,
-                                     &module->state_mem);
-    if (ret != OMPI_SUCCESS) {
-        goto error;
-    }
-
-    /* exchange window state addrs */
-    module->state_addrs = calloc(comm_size, sizeof(uint64_t));
-    ret = comm->c_coll->coll_allgather((void *)&state_base,  sizeof(uint64_t),
-                                       MPI_BYTE, module->state_addrs, sizeof(uint64_t),
-                                       MPI_BYTE, comm, comm->c_coll->coll_allgather_module);
-    if (ret != OMPI_SUCCESS) {
-        goto error;
-    }
-
-
-    /* init window state */
-    module->state.lock = TARGET_LOCK_UNLOCKED;
-    module->state.post_index = 0;
-    memset((void *)module->state.post_state, 0, sizeof(uint64_t) * OMPI_OSC_UCX_POST_PEER_MAX);
-    module->state.complete_count = 0;
-    module->state.req_flag = 0;
-    module->state.acc_lock = TARGET_LOCK_UNLOCKED;
-    module->state.dynamic_win_count = 0;
-    for (i = 0; i < OMPI_OSC_UCX_ATTACH_MAX; i++) {
-        module->local_dynamic_win_info[i].refcnt = 0;
-    }
-    module->epoch_type.access = NONE_EPOCH;
-    module->epoch_type.exposure = NONE_EPOCH;
-    module->lock_count = 0;
-    module->post_count = 0;
-    module->start_group = NULL;
-    module->post_group = NULL;
-    OBJ_CONSTRUCT(&module->pending_posts, opal_list_t);
-    module->start_grp_ranks = NULL;
-    module->lock_all_is_nocheck = false;
-
-    if (!module->no_locks) {
-        OBJ_CONSTRUCT(&module->outstanding_locks, opal_hash_table_t);
-        ret = opal_hash_table_init(&module->outstanding_locks, comm_size);
-        if (ret != OPAL_SUCCESS) {
-            goto error;
-        }
-    } else {
-        win->w_flags |= OMPI_WIN_NO_LOCKS;
-    }
-
-    win->w_osc_module = &module->super;
-
-    opal_infosubscribe_subscribe(&win->super, "no_locks", "false", ompi_osc_ucx_set_no_lock_info);
-
-    /* sync with everyone */
-
-    ret = module->comm->c_coll->coll_barrier(module->comm,
-                                             module->comm->c_coll->coll_barrier_module);
-    if (ret != OMPI_SUCCESS) {
-        goto error;
-    }
-
-    return ret;
-
-error:
-    if (0 == ompi_comm_rank (module->comm) && unlink_needed) {
-        opal_shmem_unlink (&module->seg_ds);
-    }
-
-    if (module->disp_units) free(module->disp_units);
-    if (module->comm) ompi_comm_free(&module->comm);
-    free(module);
-
-error_nomem:
-    if (env_initialized == true) {
-        opal_common_ucx_wpool_finalize(mca_osc_ucx_component.wpool);
-        OBJ_DESTRUCT(&mca_osc_ucx_component.requests);
-        mca_osc_ucx_component.env_initialized = false;
-    }
-
-    ompi_osc_ucx_unregister_progress();
-    return ret;
-
-#if 0
-    opal_atomic_lock_init(&module->my_node_state->accumulate_lock, OPAL_ATOMIC_LOCK_UNLOCKED);
-
-    /* share everyone's displacement units. */
-    module->disp_units = malloc(sizeof(int) * comm_size);
-    ret = module->comm->c_coll->coll_allgather(&disp_unit, 1, MPI_INT,
-                                              module->disp_units, 1, MPI_INT,
-                                              module->comm,
-                                              module->comm->c_coll->coll_allgather_module);
-    if (OMPI_SUCCESS != ret) goto error;
-
-
-    module->start_group = NULL;
-    module->post_group = NULL;
-
-    /* initialize synchronization code */
-    module->my_sense = 1;
-
-    module->outstanding_locks = calloc(comm_size, sizeof(enum ompi_osc_sm_locktype_t));
-    if (NULL == module->outstanding_locks) {
-        ret = OMPI_ERR_TEMP_OUT_OF_RESOURCE;
-        goto error;
-    }
-
-    if (0 == ompi_comm_rank(module->comm)) {
-#if HAVE_PTHREAD_CONDATTR_SETPSHARED && HAVE_PTHREAD_MUTEXATTR_SETPSHARED
-        pthread_mutexattr_t mattr;
-        pthread_condattr_t cattr;
-        bool blocking_fence=false;
-        int flag;
-
-        if (OMPI_SUCCESS != opal_info_get_bool(info, "blocking_fence",
-                                               &blocking_fence, &flag)) {
-            goto error;
-        }
-
-        if (flag && blocking_fence) {
-            ret = pthread_mutexattr_init(&mattr);
-            ret = pthread_mutexattr_setpshared(&mattr, PTHREAD_PROCESS_SHARED);
-            if (ret != 0) {
-                module->global_state->use_barrier_for_fence = 1;
-            } else {
-                ret = pthread_mutex_init(&module->global_state->mtx, &mattr);
-                if (ret != 0) {
-                    module->global_state->use_barrier_for_fence = 1;
-                } else {
-                    pthread_condattr_init(&cattr);
-                    pthread_condattr_setpshared(&cattr, PTHREAD_PROCESS_SHARED);
-                    ret = pthread_cond_init(&module->global_state->cond, &cattr);
-                    if (ret != 0) return OMPI_ERROR;
-                    pthread_condattr_destroy(&cattr);
-                }
-            }
-            module->global_state->use_barrier_for_fence = 0;
-            module->global_state->sense = module->my_sense;
-            module->global_state->count = comm_size;
-            pthread_mutexattr_destroy(&mattr);
-        } else {
-            module->global_state->use_barrier_for_fence = 1;
-        }
-#else
-        module->global_state->use_barrier_for_fence = 1;
-#endif
-    }
-
-    ret = module->comm->c_coll->coll_barrier(module->comm,
-                                            module->comm->c_coll->coll_barrier_module);
-    if (OMPI_SUCCESS != ret) goto error;
-
-    *model = MPI_WIN_UNIFIED;
-
-    return OMPI_SUCCESS;
-
- error:
-
-    if (0 == ompi_comm_rank (module->comm) && unlink_needed) {
-        opal_shmem_unlink (&module->seg_ds);
-    }
-
-    ompi_osc_sm_free (win);
-
-    return ret;
-#endif
-}
-
-int
-ompi_osc_ucx_shared_query(struct ompi_win_t *win, int rank, size_t *size, int *disp_unit, void *baseptr)
+int ompi_osc_ucx_shared_query(struct ompi_win_t *win, int rank, size_t *size,
+        int *disp_unit, void *baseptr)
 {
     ompi_osc_ucx_module_t *module =
         (ompi_osc_ucx_module_t*) win->w_osc_module;
@@ -745,7 +328,7 @@ ompi_osc_ucx_shared_query(struct ompi_win_t *win, int rank, size_t *size, int *d
 
     if (MPI_PROC_NULL != rank) {
         *size = module->sizes[rank];
-        *((void**) baseptr) = module->addrs[rank];
+        *((void**) baseptr) = module->shmem_addrs[rank];
         if (module->disp_unit == -1) {
             *disp_unit = module->disp_units[rank];
         } else {
@@ -760,7 +343,7 @@ ompi_osc_ucx_shared_query(struct ompi_win_t *win, int rank, size_t *size, int *d
         for (i = 0 ; i < ompi_comm_size(module->comm) ; ++i) {
             if (0 != module->sizes[i]) {
                 *size = module->sizes[i];
-                *((void**) baseptr) = module->addrs[i];
+                *((void**) baseptr) = module->shmem_addrs[i];
                 if (module->disp_unit == -1) {
                     *disp_unit = module->disp_units[rank];
                 } else {
@@ -774,10 +357,6 @@ ompi_osc_ucx_shared_query(struct ompi_win_t *win, int rank, size_t *size, int *d
     return OMPI_SUCCESS;
 }
 
-
-
-
-
 static int component_select(struct ompi_win_t *win, void **base, size_t size, int disp_unit,
                             struct ompi_communicator_t *comm, struct opal_info_t *info,
                             int flavor, int *model) {
@@ -785,7 +364,6 @@ static int component_select(struct ompi_win_t *win, void **base, size_t size, in
     char *name = NULL;
     long values[2];
     int ret = OMPI_SUCCESS;
-    //ucs_status_t status;
     int i, comm_size = ompi_comm_size(comm);
     bool env_initialized = false;
     void *state_base = NULL;
@@ -795,6 +373,10 @@ static int component_select(struct ompi_win_t *win, void **base, size_t size, in
     int my_mem_addr_size;
     void * my_info = NULL;
     char *recv_buf = NULL;
+    unsigned long total, *rbuf;
+    int flag;
+    size_t pagesize;
+    bool unlink_needed = false;
 
     /* May be called concurrently - protect */
     _osc_ucx_init_lock();
@@ -852,11 +434,6 @@ select_unlock:
         goto error;
     }
 
-    if (flavor == MPI_WIN_FLAVOR_SHARED) {
-        return component_select_shared_win( win, base, size, disp_unit, comm,
-                info, flavor, model);
-    }
-
     /* create module structure */
     module = (ompi_osc_ucx_module_t *)calloc(1, sizeof(ompi_osc_ucx_module_t));
     if (module == NULL) {
@@ -920,7 +497,128 @@ select_unlock:
         goto error;
     }
 
-    if (flavor == MPI_WIN_FLAVOR_ALLOCATE || flavor == MPI_WIN_FLAVOR_CREATE) {
+    if (flavor == MPI_WIN_FLAVOR_SHARED) {    
+        /* create the segment */
+        opal_output_verbose(MCA_BASE_VERBOSE_DEBUG, ompi_osc_base_framework.framework_output,
+                            "allocating shared memory region of size %ld\n", (long) size);
+        /* get the pagesize */
+        pagesize = opal_getpagesize();
+
+        rbuf = malloc(sizeof(unsigned long) * comm_size);
+        if (NULL == rbuf) return OMPI_ERR_TEMP_OUT_OF_RESOURCE;
+
+        /* Note that the alloc_shared_noncontig info key only has
+         * meaning during window creation.  Once the window is
+         * created, we can't move memory around without making
+         * everything miserable.  So we intentionally do not subcribe
+         * to updates on the info key, because there's no useful
+         * update to occur. */
+        module->noncontig_shared_win = false;
+        if (OMPI_SUCCESS != opal_info_get_bool(info, "alloc_shared_noncontig",
+                                               &module->noncontig_shared_win, &flag)) {
+            goto error;
+        }
+
+        if (module->noncontig_shared_win) {
+            opal_output_verbose(MCA_BASE_VERBOSE_DEBUG, ompi_osc_base_framework.framework_output,
+                                "allocating window using non-contiguous strategy");
+            total = ((size - 1) / pagesize + 1) * pagesize;
+        } else {
+            opal_output_verbose(MCA_BASE_VERBOSE_DEBUG, ompi_osc_base_framework.framework_output,
+                                "allocating window using contiguous strategy");
+            total = size;
+        }
+        ret = module->comm->c_coll->coll_allgather(&total, 1, MPI_UNSIGNED_LONG,
+                                                  rbuf, 1, MPI_UNSIGNED_LONG,
+                                                  module->comm,
+                                                  module->comm->c_coll->coll_allgather_module);
+        if (OMPI_SUCCESS != ret) return ret;
+
+        total = 0;
+        for (i = 0 ; i < comm_size ; ++i) {
+            total += rbuf[i];
+        }
+
+        module->segment_base = NULL; 
+
+        if (total != 0) {
+            /* user opal/shmem directly to create a shared memory segment */
+            if (0 == ompi_comm_rank (module->comm)) {
+                char *data_file;
+                ret = opal_asprintf (&data_file, "%s" OPAL_PATH_SEP "osc_ucx.%s.%x.%d.%s",
+                                     mca_osc_ucx_component.backing_directory, ompi_process_info.nodename,
+                                     OMPI_PROC_MY_NAME->jobid, (int) OMPI_PROC_MY_NAME->vpid,
+                                     ompi_comm_print_cid(module->comm));
+                if (ret < 0) {
+                    free(rbuf);
+                    return OMPI_ERR_OUT_OF_RESOURCE;
+                }
+
+                ret = opal_shmem_segment_create (&module->seg_ds, data_file, total);
+                free(data_file);
+                if (OPAL_SUCCESS != ret) {
+                    free(rbuf);
+                    goto error;
+                }
+
+                unlink_needed = true;
+            }
+
+            ret = module->comm->c_coll->coll_bcast (&module->seg_ds, sizeof (module->seg_ds), MPI_BYTE, 0,
+                                                    module->comm, module->comm->c_coll->coll_bcast_module);
+            if (OMPI_SUCCESS != ret) {
+                free(rbuf);
+                goto error;
+            }
+
+            module->segment_base = opal_shmem_segment_attach (&module->seg_ds);
+            if (NULL == module->segment_base) {
+                free(rbuf);
+                goto error;
+            }
+
+            /* wait for all processes to attach */
+            ret = module->comm->c_coll->coll_barrier (module->comm, module->comm->c_coll->coll_barrier_module);
+            if (OMPI_SUCCESS != ret) {
+                free(rbuf);
+                goto error;
+            }
+
+            if (0 == ompi_comm_rank (module->comm)) {
+                opal_shmem_unlink (&module->seg_ds);
+                unlink_needed = false;
+            }
+        } 
+
+        /* Although module->segment_base is pointing to a same physical address
+         * for all the processes, its value which is a virtual address can be
+         * different between different processes. To use direct load/store,
+         * shmem_addrs can be used, however, for RDMA, virtual address of
+         * remote process that will be stored in module->addrs should be used */
+        module->sizes = malloc(sizeof(size_t) * comm_size);
+        if (NULL == module->sizes) return OMPI_ERR_TEMP_OUT_OF_RESOURCE;
+        module->shmem_addrs = malloc(sizeof(uint64_t) * comm_size);
+        if (NULL == module->shmem_addrs) return OMPI_ERR_TEMP_OUT_OF_RESOURCE;
+
+
+        for (i = 0, total = 0; i < comm_size ; ++i) {
+            module->sizes[i] = rbuf[i];
+            if (module->sizes[i] || !module->noncontig_shared_win) {
+                module->shmem_addrs[i] = ((uint64_t) module->segment_base) + total;
+                total += rbuf[i];
+            } else {
+                module->shmem_addrs[i] = (uint64_t)NULL;
+            }
+        }
+
+        free(rbuf);
+
+        module->size = module->sizes[ompi_comm_rank(module->comm)];
+        *base = module->shmem_addrs[ompi_comm_rank(module->comm)];
+    }
+
+    if (flavor == MPI_WIN_FLAVOR_ALLOCATE || flavor == MPI_WIN_FLAVOR_CREATE ||
+            flavor == MPI_WIN_FLAVOR_SHARED) {
         switch (flavor) {
         case MPI_WIN_FLAVOR_ALLOCATE:
             mem_type = OPAL_COMMON_UCX_MEM_ALLOCATE_MAP;
@@ -928,9 +626,11 @@ select_unlock:
         case MPI_WIN_FLAVOR_CREATE:
             mem_type = OPAL_COMMON_UCX_MEM_MAP;
             break;
+        case MPI_WIN_FLAVOR_SHARED:
+            mem_type = OPAL_COMMON_UCX_MEM_MAP;
+            break;
         }
-
-        ret = opal_common_ucx_wpmem_create(module->ctx, base, size,
+        ret = opal_common_ucx_wpmem_create(module->ctx, base, module->size,
                                          mem_type, &exchange_len_info,
                                          OPAL_COMMON_UCX_WPMEM_ADDR_EXCHANGE_FULL,
                                          (void *)module->comm,
@@ -961,7 +661,8 @@ select_unlock:
         goto error;
     }
 
-    if (flavor == MPI_WIN_FLAVOR_ALLOCATE || flavor == MPI_WIN_FLAVOR_CREATE) {
+    if (flavor == MPI_WIN_FLAVOR_ALLOCATE || flavor == MPI_WIN_FLAVOR_CREATE ||
+            flavor == MPI_WIN_FLAVOR_SHARED) {
         memcpy(my_info, base, sizeof(uint64_t));
     } else {
         memcpy(my_info, &zero, sizeof(uint64_t));
@@ -1041,6 +742,9 @@ error_nomem:
         mca_osc_ucx_component.env_initialized = false;
     }
 
+    if (0 == ompi_comm_rank (module->comm) && unlink_needed) {
+        opal_shmem_unlink (&module->seg_ds);
+    }
     ompi_osc_ucx_unregister_progress();
     return ret;
 }

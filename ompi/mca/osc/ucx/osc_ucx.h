@@ -128,6 +128,9 @@ typedef struct ompi_osc_ucx_module {
 
     bool noncontig_shared_win;
     size_t *sizes;
+    /* in shared windows, shmem_addrs can be used for direct load store to
+     * remote windows */
+    uint64_t *shmem_addrs;
     void *segment_base;
     /** opal shared memory structure for the shared memory segment */
     opal_shmem_ds_t seg_ds;
