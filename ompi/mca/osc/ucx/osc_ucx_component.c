@@ -595,9 +595,18 @@ select_unlock:
          * shmem_addrs can be used, however, for RDMA, virtual address of
          * remote process that will be stored in module->addrs should be used */
         module->sizes = malloc(sizeof(size_t) * comm_size);
-        if (NULL == module->sizes) return OMPI_ERR_TEMP_OUT_OF_RESOURCE;
+        if (NULL == module->sizes) {
+            free(rbuf);
+            ret = OMPI_ERR_TEMP_OUT_OF_RESOURCE;
+            goto error;
+        }
         module->shmem_addrs = malloc(sizeof(uint64_t) * comm_size);
-        if (NULL == module->shmem_addrs) return OMPI_ERR_TEMP_OUT_OF_RESOURCE;
+        if (NULL == module->shmem_addrs) { 
+            free(module->sizes);
+            free(rbuf);
+            ret =  OMPI_ERR_TEMP_OUT_OF_RESOURCE;
+            goto error;
+        }
 
 
         for (i = 0, total = 0; i < comm_size ; ++i) {
@@ -879,6 +888,13 @@ int ompi_osc_ucx_free(struct ompi_win_t *win) {
                                              module->comm->c_coll->coll_barrier_module);
     if (ret != OMPI_SUCCESS) {
         return ret;
+    }
+
+    if (module->flavor == MPI_WIN_FLAVOR_SHARED &&
+            module->segment_base != NULL) { 
+        opal_shmem_segment_detach(&module->seg_ds);
+        free(module->shmem_addrs);
+        free(module->sizes);
     }
 
    /* MPI_Win_free should detach any memory attached to dynamic windows */
