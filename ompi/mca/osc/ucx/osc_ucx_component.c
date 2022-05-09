@@ -227,7 +227,6 @@ static int component_finalize(void) {
 
 static int component_query(struct ompi_win_t *win, void **base, size_t size, int disp_unit,
                            struct ompi_communicator_t *comm, struct opal_info_t *info, int flavor) {
-    //if (MPI_WIN_FLAVOR_SHARED == flavor) return -1;
     return mca_osc_ucx_component.priority;
 }
 
