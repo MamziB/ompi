@@ -908,6 +908,30 @@ int ompi_osc_ucx_fetch_and_op(const void *origin_addr, void *result_addr,
     }
 }
 
+/* Operations issued to target before this call completes when it returns */
+static inline int wpmem_putget_wait(ompi_osc_ucx_module_t *module, int target) {
+
+    int ret = OMPI_SUCCESS;
+    uint64_t remote_addr = (module->state_addrs[target]) + OSC_UCX_STATE_REQ_FLAG_OFFSET;
+
+    ret = opal_common_ucx_wpmem_fence(module->mem);
+    if (ret != OMPI_SUCCESS) {
+        OSC_UCX_VERBOSE(1, "opal_common_ucx_mem_fence failed: %d", ret);
+        return OMPI_ERROR;
+    }
+
+    /* blocking noop fetch */
+    ret = opal_common_ucx_wpmem_fetch(module->state_mem, UCP_ATOMIC_FETCH_OP_FADD,
+                                         0, target, &(module->req_result),
+                                         sizeof(uint64_t), remote_addr & (~0x7));
+    if (ret != OMPI_SUCCESS) {
+        OSC_UCX_VERBOSE(1, "opal_common_ucx_wpmem_fetch failed: %d", ret);
+        return OMPI_ERROR;
+    }
+
+    return ret;
+}
+
 static
 int get_accumulate_req(const void *origin_addr, int origin_count,
                        struct ompi_datatype_t *origin_dt,
@@ -943,6 +967,12 @@ int get_accumulate_req(const void *origin_addr, int origin_count,
                            target_disp, target_count, target_dt, win);
     if (ret != OMPI_SUCCESS) {
         return ret;
+    }
+
+    ret = wpmem_putget_wait(module, target);
+    if (ret != OMPI_SUCCESS) {
+        OSC_UCX_VERBOSE(1, "wpmem_putget_wait failed: %d", ret);
+        return OMPI_ERROR;
     }
 
     if (op != &ompi_mpi_op_no_op.op) {
