@@ -158,9 +158,18 @@ int ompi_osc_ucx_unlock(int target, struct ompi_win_t *win) {
     opal_hash_table_remove_value_uint32(&module->outstanding_locks,
                                         (uint32_t)target);
 
-    ret = opal_common_ucx_wpmem_flush(module->mem, OPAL_COMMON_UCX_SCOPE_EP, target);
-    if (ret != OMPI_SUCCESS) {
-        return ret;
+    if (module->flavor == MPI_WIN_FLAVOR_DYNAMIC) {
+        for (uint64_t i = 0; i < module->state.dynamic_win_count; i++) {
+            ret = opal_common_ucx_wpmem_flush(module->local_dynamic_win_info[i].mem , OPAL_COMMON_UCX_SCOPE_WORKER, 0);
+            if (ret != OMPI_SUCCESS) {
+                return ret;
+            }
+        }
+    } else {
+        ret = opal_common_ucx_wpmem_flush(module->mem, OPAL_COMMON_UCX_SCOPE_EP, target);
+        if (ret != OMPI_SUCCESS) {
+            return ret;
+        }
     }
 
     if (lock->is_nocheck == false) {

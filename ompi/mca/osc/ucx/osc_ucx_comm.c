@@ -354,9 +354,13 @@ static inline int get_dynamic_win_info(uint64_t remote_addr, ompi_osc_ucx_module
         return MPI_ERR_RMA_RANGE;
     }
 
+
     temp_dynamic_wins = (ompi_osc_dynamic_win_info_t *)(temp_buf + sizeof(uint64_t));
-    *win_idx = ompi_osc_find_attached_region_position(temp_dynamic_wins, 0, win_count,
+    *win_idx = ompi_osc_find_attached_region_position(temp_dynamic_wins, 0, win_count - 1,
                                                      remote_addr, 1, &insert);
+    printf("calling get_dynamic_win_info win_count=%d win_idx=%d\n",
+            win_count, *win_idx
+            );
     if (*win_idx < 0 || (uint64_t)*win_idx >= win_count) {
         return MPI_ERR_RMA_RANGE;
     }
@@ -789,6 +793,8 @@ do_atomic_compare_and_swap(const void *origin_addr, const void *compare_addr,
     int ret;
     bool lock_acquired = false;
     size_t dt_bytes;
+    int win_idx = -1;
+    opal_common_ucx_wpmem_t *mem = module->mem;
     if (!module->acc_single_intrinsic) {
         ret = start_atomicity(module, target, &lock_acquired);
         if (ret != OMPI_SUCCESS) {
@@ -796,10 +802,18 @@ do_atomic_compare_and_swap(const void *origin_addr, const void *compare_addr,
         }
     }
 
+    if (module->flavor == MPI_WIN_FLAVOR_DYNAMIC) {
+        ret = get_dynamic_win_info(remote_addr, module, target, &win_idx);
+        if (ret != OMPI_SUCCESS) {
+            return ret;
+        }
+        mem = module->local_dynamic_win_info[win_idx].mem;
+    }
+
     ompi_datatype_type_size(dt, &dt_bytes);
     uint64_t compare_val = opal_common_ucx_load_uint64(compare_addr, dt_bytes);
     uint64_t value       = opal_common_ucx_load_uint64(origin_addr,  dt_bytes);
-    ret = opal_common_ucx_wpmem_cmpswp_nb(module->mem, compare_val, value, target,
+    ret = opal_common_ucx_wpmem_cmpswp_nb(mem, compare_val, value, target,
                                           result_addr, dt_bytes, remote_addr,
                                           NULL, NULL);
 
@@ -821,6 +835,7 @@ int ompi_osc_ucx_compare_and_swap(const void *origin_addr, const void *compare_a
     int ret = OMPI_SUCCESS, win_idx = -1;
     bool lock_acquired = false;
 
+    printf("calling ompi_osc_ucx_compare_and_swap with target_disp=%ld \n", target_disp);
     ret = check_sync_state(module, target, false);
     if (ret != OMPI_SUCCESS) {
         return ret;
@@ -835,7 +850,8 @@ int ompi_osc_ucx_compare_and_swap(const void *origin_addr, const void *compare_a
     }
 
     ompi_datatype_type_size(dt, &dt_bytes);
-    if (ompi_osc_base_is_atomic_size_supported(remote_addr, dt_bytes)) {
+    if (module->acc_single_intrinsic && 
+            ompi_osc_base_is_atomic_size_supported(remote_addr, dt_bytes)) {
         // fast path using UCX atomic operations
         return do_atomic_compare_and_swap(origin_addr, compare_addr,
                                           result_addr, dt, target,
@@ -850,7 +866,7 @@ int ompi_osc_ucx_compare_and_swap(const void *origin_addr, const void *compare_a
     }
 
     ret = opal_common_ucx_wpmem_putget(mem, OPAL_COMMON_UCX_GET, target,
-                                       &result_addr, dt_bytes, remote_addr);
+                                       result_addr, dt_bytes, remote_addr);
     if (OPAL_SUCCESS != ret) {
         OSC_UCX_VERBOSE(1, "opal_common_ucx_mem_putget failed: %d", ret);
         return OMPI_ERROR;
