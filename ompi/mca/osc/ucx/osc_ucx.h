@@ -24,7 +24,7 @@
 #define OSC_UCX_VERBOSE MCA_COMMON_UCX_VERBOSE
 
 #define OMPI_OSC_UCX_POST_PEER_MAX 32
-#define OMPI_OSC_UCX_ATTACH_MAX    32
+#define OMPI_OSC_UCX_ATTACH_MAX    48
 #define OMPI_OSC_UCX_MEM_ADDR_MAX_LEN  1024
 
 typedef struct ompi_osc_ucx_component {
@@ -124,6 +124,7 @@ typedef struct ompi_osc_ucx_module {
     opal_common_ucx_ctx_t *ctx;
     opal_common_ucx_wpmem_t *mem;
     opal_common_ucx_wpmem_t *state_mem;
+    opal_common_ucx_wpmem_t *dynamic_mem;
 
     bool noncontig_shared_win;
     size_t *sizes;

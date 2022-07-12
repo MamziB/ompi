@@ -82,6 +82,11 @@ int ompi_osc_ucx_fence(int mpi_assert, struct ompi_win_t *win) {
                 if (ret != OMPI_SUCCESS) {
                     return ret;
                 }
+                ret = opal_common_ucx_wpmem_flush(module->dynamic_mem,
+                        OPAL_COMMON_UCX_SCOPE_WORKER, 0);
+                if (ret != OMPI_SUCCESS) {
+                    return ret;
+                }
             }
         } else {
             ret = opal_common_ucx_wpmem_flush(module->mem, OPAL_COMMON_UCX_SCOPE_WORKER, 0/*ignore*/);
