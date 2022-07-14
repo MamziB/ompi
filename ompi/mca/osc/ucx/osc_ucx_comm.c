@@ -36,9 +36,6 @@
         _mem = _module->dynamic_mem;                                             \
     }
 
-
-
-
 typedef struct ucx_iovec {
     void *addr;
     size_t len;
@@ -367,42 +364,20 @@ static inline int get_dynamic_win_info(uint64_t remote_addr, ompi_osc_ucx_module
         return MPI_ERR_RMA_RANGE;
     }
 
-
     temp_dynamic_wins = (ompi_osc_dynamic_win_info_t *)(temp_buf + sizeof(uint64_t));
     contain = ompi_osc_find_attached_region_position(temp_dynamic_wins, 0, win_count - 1,
                                                      remote_addr, 1, &insert);
-    printf("calling get_dynamic_win_info win_count=%d contain=%d\n",
-            win_count, contain
-            );
     if (contain < 0 || contain >= win_count) {
         return MPI_ERR_RMA_RANGE;
     }
-  
+    
     assert(module->dynamic_mem != NULL);
 
-
-    ///////
-#if 0
-    if (module->dynamic_mem->mem_addrs == NULL) {
-        module->dynamic_mem->mem_addrs = calloc(ompi_comm_size(module->comm),
-                OMPI_OSC_UCX_MEM_ADDR_MAX_LEN);
-        module->dynamic_mem->mem_displs = calloc(ompi_comm_size(module->comm),
-                sizeof(int));
-    }
-    memcpy(module->dynamic_mem->mem_addrs + target * OMPI_OSC_UCX_MEM_ADDR_MAX_LEN,
-           temp_dynamic_wins[contain].mem_addr, OMPI_OSC_UCX_MEM_ADDR_MAX_LEN);
-    module->dynamic_mem->mem_displs[target] = target * OMPI_OSC_UCX_MEM_ADDR_MAX_LEN;
-#endif
-    /////
-        
     _mem_record_t *mem_rec = NULL;
     ret = opal_tsd_tracked_key_get(&module->dynamic_mem->tls_key, (void **) &mem_rec);
     if (OPAL_SUCCESS != ret) {
         return ret;
     }
-  //   _ctx_record_t * ctx_rec = _tlocal_get_ctx_rec(mem->ctx->tls_key);
-
-  //   assert(ctx_rec != NULL);
     
      if (mem_rec == NULL) {
         ret = opal_common_ucx_tlocal_fetch_spath(module->dynamic_mem, target);
@@ -416,17 +391,14 @@ static inline int get_dynamic_win_info(uint64_t remote_addr, ompi_osc_ucx_module
 
      }
 
-    assert(NULL != mem_rec);
-    assert(NULL != mem_rec->rkeys);
+    assert(NULL != mem_rec && NULL != mem_rec->rkeys);
 
-    // now destroy the previous rkey[target] and create a new one
+    // destroy the previous rkey[target] and create a new one
     opal_mutex_lock(&mem_rec->winfo->mutex);
 
     if (mem_rec->rkeys[target] != NULL) {
         ucp_rkey_destroy(mem_rec->rkeys[target]);
     }
-    
-    //opal_common_ucx_winfo_t *winfo = ctx_rec->winfo;
 
     void *rkey_buffer = &temp_dynamic_wins[contain].mem_addr;
 
@@ -439,27 +411,6 @@ static inline int get_dynamic_win_info(uint64_t remote_addr, ompi_osc_ucx_module
         MCA_COMMON_UCX_VERBOSE(1, "ucp_ep_rkey_unpack failed: %d", ret);
         return OPAL_ERROR;
     }
-
-#if 0
-
-    printf("inside get_dynamic_win_info: memcpy OMPI_OSC_UCX_MEM_ADDR_MAX_LEN to module->dynamic_mem->mem_addrs \n");
-
-    // TODO: if mem_addrs gets created during dynamic_mem creation, then we must use 
-    // rkey_addr_len instead of OMPI_OSC_UCX_MEM_ADDR_MAX_LEN otherwise memcpy  leads to data validation issue
-
-
-    //{
-        // call wpmem_create for dyn_mem
-        // all the rest of the mem becomes dyn_mem
-        // just like v4, we need win_info_array so that
-        // we do module->mem_rec.dyn_mem.win_info_array[target]) = new_key on local thread info
-        // we do not need contain or use contain
-        // save the new rikey in the treahd local info
-    //}
-
-#endif
-
-
 
 cleanup:
     free(temp_buf);
@@ -887,7 +838,6 @@ int ompi_osc_ucx_compare_and_swap(const void *origin_addr, const void *compare_a
     int ret = OMPI_SUCCESS;
     bool lock_acquired = false;
 
-    printf("calling ompi_osc_ucx_compare_and_swap with target_disp=%ld \n", target_disp);
     ret = check_sync_state(module, target, false);
     if (ret != OMPI_SUCCESS) {
         return ret;
@@ -896,8 +846,7 @@ int ompi_osc_ucx_compare_and_swap(const void *origin_addr, const void *compare_a
     CHECK_DYNAMIC_WIN(mem, remote_addr, module, target, ret);
 
     ompi_datatype_type_size(dt, &dt_bytes);
-    if (module->acc_single_intrinsic && 
-            ompi_osc_base_is_atomic_size_supported(remote_addr, dt_bytes)) {
+    if (ompi_osc_base_is_atomic_size_supported(remote_addr, dt_bytes)) {
         // fast path using UCX atomic operations
         return do_atomic_compare_and_swap(origin_addr, compare_addr,
                                           result_addr, dt, target,
