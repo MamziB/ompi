@@ -422,10 +422,10 @@ static inline int get_dynamic_win_info(uint64_t remote_addr, ompi_osc_ucx_module
     // now destroy the previous rkey[target] and create a new one
     opal_mutex_lock(&mem_rec->winfo->mutex);
 
-    ucp_rkey_destroy(mem_rec->rkeys[target]);
-
-
-
+    if (mem_rec->rkeys[target] != NULL) {
+        ucp_rkey_destroy(mem_rec->rkeys[target]);
+    }
+    
     //opal_common_ucx_winfo_t *winfo = ctx_rec->winfo;
 
     void *rkey_buffer = &temp_dynamic_wins[contain].mem_addr;
