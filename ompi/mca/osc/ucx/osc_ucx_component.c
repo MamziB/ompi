@@ -305,7 +305,8 @@ static int exchange_len_info(void *my_info, size_t my_info_len, char **recv_info
     int ret = OMPI_SUCCESS;
     struct ompi_communicator_t *comm = (struct ompi_communicator_t *)metadata;
     int comm_size = ompi_comm_size(comm);
-    int lens[comm_size];
+    //int lens[comm_size];
+    int *lens = calloc(comm_size, sizeof(int));
     int total_len, i;
 
     ret = comm->c_coll->coll_allgather(&my_info_len, 1, MPI_INT,
@@ -330,6 +331,7 @@ static int exchange_len_info(void *my_info, size_t my_info_len, char **recv_info
         return ret;
     }
 
+    free(lens);
     return ret;
 }
 
@@ -716,7 +718,20 @@ select_unlock:
         if (ret != OMPI_SUCCESS) {
             goto error;
         }
-    }
+    } else if (flavor == MPI_WIN_FLAVOR_DYNAMIC) {
+
+        int *dyn_base = malloc(sizeof(int));
+        ret = opal_common_ucx_wpmem_create(module->ctx, &dyn_base, sizeof(int),
+                                         OPAL_COMMON_UCX_MEM_MAP,
+                                         &exchange_len_info,
+                                         OPAL_COMMON_UCX_WPMEM_ADDR_EXCHANGE_FULL,
+                                         (void *)module->comm,
+                                         &my_mem_addr, &my_mem_addr_size,
+                                         &module->dynamic_mem);
+        if (ret != OMPI_SUCCESS) {
+            goto error;
+        } 
+    }    
 
     state_base = (void *)&(module->state);
     ret = opal_common_ucx_wpmem_create(module->ctx, &state_base,
@@ -831,10 +846,10 @@ int ompi_osc_find_attached_region_position(ompi_osc_dynamic_win_info_t *dynamic_
                                            uint64_t base, size_t len, int *insert) {
     int mid_index = (max_index + min_index) >> 1;
 
-  // fprintf(stderr, "ompi_osc_find_attached_region_position: min_index: %d mid_index=%d max_index=%d \n",
-  //         min_index, mid_index, max_index
-  //         
-  //         );
+   fprintf(stderr, "ompi_osc_find_attached_region_position: min_index: %d mid_index=%d max_index=%d \n",
+           min_index, mid_index, max_index
+           
+           );
     if (dynamic_wins[mid_index].size == 1) {
         len = 0;
     }
@@ -849,14 +864,14 @@ int ompi_osc_find_attached_region_position(ompi_osc_dynamic_win_info_t *dynamic_
    //}
 
     if (dynamic_wins[mid_index].base > base) {
-  //      printf("ompi_osc_find_attached_region_position: dynamic_wins[mid_index].base > base\n");
+        printf("ompi_osc_find_attached_region_position: dynamic_wins[mid_index].base > base\n");
         return ompi_osc_find_attached_region_position(dynamic_wins, min_index, mid_index-1,
                                                       base, len, insert);
     } else if (base + len <= dynamic_wins[mid_index].base + dynamic_wins[mid_index].size) {
-  //      printf("ompi_osc_find_attached_region_position: base + len <= ... \n");
+        printf("ompi_osc_find_attached_region_position: base + len <= ... \n");
         return mid_index;
     } else {
-  //      printf("ompi_osc_find_attached_region_position: else ...  \n");
+        printf("ompi_osc_find_attached_region_position: else ...  \n");
         return ompi_osc_find_attached_region_position(dynamic_wins, mid_index+1, max_index,
                                                       base, len, insert);
     }
@@ -995,6 +1010,9 @@ int ompi_osc_ucx_free(struct ompi_win_t *win) {
     opal_common_ucx_wpmem_free(module->state_mem);
     if (NULL != module->mem) {
         opal_common_ucx_wpmem_free(module->mem);
+    }
+    if (NULL != module->dynamic_mem) {
+        opal_common_ucx_wpmem_free(module->dynamic_mem);
     }
 
     opal_common_ucx_wpctx_release(module->ctx);

@@ -27,6 +27,18 @@
         return OMPI_ERROR;                                                       \
     }
 
+#define CHECK_DYNAMIC_WIN(_mem, _remote_addr, _module, _target, _ret)            \
+    if (_module->flavor == MPI_WIN_FLAVOR_DYNAMIC) {                             \
+        _ret = get_dynamic_win_info(_remote_addr, _module, _target);             \
+        if (_ret != OMPI_SUCCESS) {                                              \
+            return _ret;                                                         \
+        }                                                                        \
+        _mem = _module->dynamic_mem;                                             \
+    }
+
+
+
+
 typedef struct ucx_iovec {
     void *addr;
     size_t len;
@@ -325,11 +337,12 @@ static inline int end_atomicity(
 }
 
 static inline int get_dynamic_win_info(uint64_t remote_addr, ompi_osc_ucx_module_t *module,
-                                       int target, int *win_idx) {
+                                       int target) {
     uint64_t remote_state_addr = (module->state_addrs)[target] + OSC_UCX_STATE_DYNAMIC_WIN_CNT_OFFSET;
     size_t remote_state_len = sizeof(uint64_t) + sizeof(ompi_osc_dynamic_win_info_t) * OMPI_OSC_UCX_ATTACH_MAX;
     char *temp_buf = calloc(remote_state_len, 1);
     ompi_osc_dynamic_win_info_t *temp_dynamic_wins;
+    int contain = 0;
     uint64_t win_count;
     int insert = -1;
     int ret;
@@ -356,25 +369,97 @@ static inline int get_dynamic_win_info(uint64_t remote_addr, ompi_osc_ucx_module
 
 
     temp_dynamic_wins = (ompi_osc_dynamic_win_info_t *)(temp_buf + sizeof(uint64_t));
-    *win_idx = ompi_osc_find_attached_region_position(temp_dynamic_wins, 0, win_count - 1,
+    contain = ompi_osc_find_attached_region_position(temp_dynamic_wins, 0, win_count - 1,
                                                      remote_addr, 1, &insert);
-    printf("calling get_dynamic_win_info win_count=%d win_idx=%d\n",
-            win_count, *win_idx
+    printf("calling get_dynamic_win_info win_count=%d contain=%d\n",
+            win_count, contain
             );
-    if (*win_idx < 0 || (uint64_t)*win_idx >= win_count) {
+    if (contain < 0 || contain >= win_count) {
         return MPI_ERR_RMA_RANGE;
     }
+  
+    assert(module->dynamic_mem != NULL);
 
-    if (module->local_dynamic_win_info[*win_idx].mem->mem_addrs == NULL) {
-        module->local_dynamic_win_info[*win_idx].mem->mem_addrs = calloc(ompi_comm_size(module->comm),
-                                                                        OMPI_OSC_UCX_MEM_ADDR_MAX_LEN);
-        module->local_dynamic_win_info[*win_idx].mem->mem_displs = calloc(ompi_comm_size(module->comm),
-                                                                        sizeof(int));
+
+    ///////
+#if 0
+    if (module->dynamic_mem->mem_addrs == NULL) {
+        module->dynamic_mem->mem_addrs = calloc(ompi_comm_size(module->comm),
+                OMPI_OSC_UCX_MEM_ADDR_MAX_LEN);
+        module->dynamic_mem->mem_displs = calloc(ompi_comm_size(module->comm),
+                sizeof(int));
+    }
+    memcpy(module->dynamic_mem->mem_addrs + target * OMPI_OSC_UCX_MEM_ADDR_MAX_LEN,
+           temp_dynamic_wins[contain].mem_addr, OMPI_OSC_UCX_MEM_ADDR_MAX_LEN);
+    module->dynamic_mem->mem_displs[target] = target * OMPI_OSC_UCX_MEM_ADDR_MAX_LEN;
+#endif
+    /////
+        
+    _mem_record_t *mem_rec = NULL;
+    ret = opal_tsd_tracked_key_get(&module->dynamic_mem->tls_key, (void **) &mem_rec);
+    if (OPAL_SUCCESS != ret) {
+        return ret;
+    }
+  //   _ctx_record_t * ctx_rec = _tlocal_get_ctx_rec(mem->ctx->tls_key);
+
+  //   assert(ctx_rec != NULL);
+    
+     if (mem_rec == NULL) {
+        ret = opal_common_ucx_tlocal_fetch_spath(module->dynamic_mem, target);
+        if (OPAL_SUCCESS != ret) {
+            return ret;
+        }
+        ret = opal_tsd_tracked_key_get(&module->dynamic_mem->tls_key, (void **) &mem_rec);
+        if (OPAL_SUCCESS != ret) {
+            return ret;
+        }
+
+     }
+
+    assert(NULL != mem_rec);
+    assert(NULL != mem_rec->rkeys);
+
+    // now destroy the previous rkey[target] and create a new one
+    opal_mutex_lock(&mem_rec->winfo->mutex);
+
+    ucp_rkey_destroy(mem_rec->rkeys[target]);
+
+
+
+    //opal_common_ucx_winfo_t *winfo = ctx_rec->winfo;
+
+    void *rkey_buffer = &temp_dynamic_wins[contain].mem_addr;
+
+    ret = ucp_ep_rkey_unpack(mem_rec->winfo->endpoints[target], rkey_buffer,
+            &mem_rec->rkeys[target]);
+
+    opal_mutex_unlock(&mem_rec->winfo->mutex);
+
+    if (ret != UCS_OK) {
+        MCA_COMMON_UCX_VERBOSE(1, "ucp_ep_rkey_unpack failed: %d", ret);
+        return OPAL_ERROR;
     }
 
-    memcpy(module->local_dynamic_win_info[*win_idx].mem->mem_addrs + target * OMPI_OSC_UCX_MEM_ADDR_MAX_LEN,
-           temp_dynamic_wins[*win_idx].mem_addr, OMPI_OSC_UCX_MEM_ADDR_MAX_LEN);
-    module->local_dynamic_win_info[*win_idx].mem->mem_displs[target] = target * OMPI_OSC_UCX_MEM_ADDR_MAX_LEN;
+#if 0
+
+    printf("inside get_dynamic_win_info: memcpy OMPI_OSC_UCX_MEM_ADDR_MAX_LEN to module->dynamic_mem->mem_addrs \n");
+
+    // TODO: if mem_addrs gets created during dynamic_mem creation, then we must use 
+    // rkey_addr_len instead of OMPI_OSC_UCX_MEM_ADDR_MAX_LEN otherwise memcpy  leads to data validation issue
+
+
+    //{
+        // call wpmem_create for dyn_mem
+        // all the rest of the mem becomes dyn_mem
+        // just like v4, we need win_info_array so that
+        // we do module->mem_rec.dyn_mem.win_info_array[target]) = new_key on local thread info
+        // we do not need contain or use contain
+        // save the new rikey in the treahd local info
+    //}
+
+#endif
+
+
 
 cleanup:
     free(temp_buf);
@@ -444,21 +529,14 @@ static int do_atomic_op_intrinsic(
     void                   *result_addr,
     ompi_osc_ucx_request_t *ucx_req)
 {
-    int ret = OMPI_SUCCESS,
-        win_idx = -1;
+    int ret = OMPI_SUCCESS;
     size_t origin_dt_bytes;
     opal_common_ucx_wpmem_t *mem = module->mem;
     ompi_datatype_type_size(dt, &origin_dt_bytes);
 
     uint64_t remote_addr = (module->addrs[target]) + target_disp * OSC_UCX_GET_DISP(module, target);
 
-    if (module->flavor == MPI_WIN_FLAVOR_DYNAMIC) {
-        ret = get_dynamic_win_info(remote_addr, module, target, &win_idx);
-        if (ret != OMPI_SUCCESS) {
-            return ret;
-        }
-        mem = module->local_dynamic_win_info[win_idx].mem;
-    }
+    CHECK_DYNAMIC_WIN(mem, remote_addr, module, target, ret);
 
     ucp_atomic_fetch_op_t opcode;
     bool is_no_op = false;
@@ -520,20 +598,14 @@ int ompi_osc_ucx_put(const void *origin_addr, int origin_count, struct ompi_data
     uint64_t remote_addr = (module->addrs[target]) + target_disp * OSC_UCX_GET_DISP(module, target);
     bool is_origin_contig = false, is_target_contig = false;
     ptrdiff_t origin_lb, origin_extent, target_lb, target_extent;
-    int ret = OMPI_SUCCESS, win_idx = -1;
+    int ret = OMPI_SUCCESS;
 
     ret = check_sync_state(module, target, false);
     if (ret != OMPI_SUCCESS) {
         return ret;
     }
 
-    if (module->flavor == MPI_WIN_FLAVOR_DYNAMIC) {
-        ret = get_dynamic_win_info(remote_addr, module, target, &win_idx);
-        if (ret != OMPI_SUCCESS) {
-            return ret;
-        }
-        mem = module->local_dynamic_win_info[win_idx].mem;
-    }
+    CHECK_DYNAMIC_WIN(mem, remote_addr, module, target, ret);
 
     if (!target_count) {
         return OMPI_SUCCESS;
@@ -576,20 +648,14 @@ int ompi_osc_ucx_get(void *origin_addr, int origin_count,
     uint64_t remote_addr = (module->addrs[target]) + target_disp * OSC_UCX_GET_DISP(module, target);
     ptrdiff_t origin_lb, origin_extent, target_lb, target_extent;
     bool is_origin_contig = false, is_target_contig = false;
-    int ret = OMPI_SUCCESS, win_idx = -1;
+    int ret = OMPI_SUCCESS;
 
     ret = check_sync_state(module, target, false);
     if (ret != OMPI_SUCCESS) {
         return ret;
     }
 
-    if (module->flavor == MPI_WIN_FLAVOR_DYNAMIC) {
-        ret = get_dynamic_win_info(remote_addr, module, target, &win_idx);
-        if (ret != OMPI_SUCCESS) {
-            return ret;
-        }
-        mem = module->local_dynamic_win_info[win_idx].mem;
-    }
+    CHECK_DYNAMIC_WIN(mem, remote_addr, module, target, ret);
 
     if (!target_count) {
         return OMPI_SUCCESS;
@@ -635,7 +701,6 @@ int accumulate_req(const void *origin_addr, int origin_count,
 
     ompi_osc_ucx_module_t *module = (ompi_osc_ucx_module_t*) win->w_osc_module;
     int ret = OMPI_SUCCESS;
-    int win_idx = -1;
     uint64_t remote_addr = (module->addrs[target]) + target_disp *
         OSC_UCX_GET_DISP(module, target);
     opal_common_ucx_wpmem_t *mem = module->mem;
@@ -658,13 +723,7 @@ int accumulate_req(const void *origin_addr, int origin_count,
                                       target_disp, NULL, ucx_req);
     }
 
-    if (module->flavor == MPI_WIN_FLAVOR_DYNAMIC) {
-        ret = get_dynamic_win_info(remote_addr, module, target, &win_idx);
-        if (ret != OMPI_SUCCESS) {
-            return ret;
-        }
-        mem = module->local_dynamic_win_info[win_idx].mem;
-    }
+    CHECK_DYNAMIC_WIN(mem, remote_addr, module, target, ret);
 
     ret = start_atomicity(module, target, &lock_acquired);
     if (ret != OMPI_SUCCESS) {
@@ -793,7 +852,6 @@ do_atomic_compare_and_swap(const void *origin_addr, const void *compare_addr,
     int ret;
     bool lock_acquired = false;
     size_t dt_bytes;
-    int win_idx = -1;
     opal_common_ucx_wpmem_t *mem = module->mem;
     if (!module->acc_single_intrinsic) {
         ret = start_atomicity(module, target, &lock_acquired);
@@ -802,13 +860,7 @@ do_atomic_compare_and_swap(const void *origin_addr, const void *compare_addr,
         }
     }
 
-    if (module->flavor == MPI_WIN_FLAVOR_DYNAMIC) {
-        ret = get_dynamic_win_info(remote_addr, module, target, &win_idx);
-        if (ret != OMPI_SUCCESS) {
-            return ret;
-        }
-        mem = module->local_dynamic_win_info[win_idx].mem;
-    }
+    CHECK_DYNAMIC_WIN(mem, remote_addr, module, target, ret);
 
     ompi_datatype_type_size(dt, &dt_bytes);
     uint64_t compare_val = opal_common_ucx_load_uint64(compare_addr, dt_bytes);
@@ -832,7 +884,7 @@ int ompi_osc_ucx_compare_and_swap(const void *origin_addr, const void *compare_a
     opal_common_ucx_wpmem_t *mem = module->mem;
     uint64_t remote_addr = (module->addrs[target]) + target_disp * OSC_UCX_GET_DISP(module, target);
     size_t dt_bytes;
-    int ret = OMPI_SUCCESS, win_idx = -1;
+    int ret = OMPI_SUCCESS;
     bool lock_acquired = false;
 
     printf("calling ompi_osc_ucx_compare_and_swap with target_disp=%ld \n", target_disp);
@@ -841,13 +893,7 @@ int ompi_osc_ucx_compare_and_swap(const void *origin_addr, const void *compare_a
         return ret;
     }
 
-    if (module->flavor == MPI_WIN_FLAVOR_DYNAMIC) {
-        ret = get_dynamic_win_info(remote_addr, module, target, &win_idx);
-        if (ret != OMPI_SUCCESS) {
-            return ret;
-        }
-        mem = module->local_dynamic_win_info[win_idx].mem;
-    }
+    CHECK_DYNAMIC_WIN(mem, remote_addr, module, target, ret);
 
     ompi_datatype_type_size(dt, &dt_bytes);
     if (module->acc_single_intrinsic && 
@@ -897,7 +943,7 @@ int ompi_osc_ucx_fetch_and_op(const void *origin_addr, void *result_addr,
     size_t dt_bytes;
     ompi_osc_ucx_module_t *module = (ompi_osc_ucx_module_t*) win->w_osc_module;
     opal_common_ucx_wpmem_t *mem = module->mem;
-    int ret = OMPI_SUCCESS, win_idx = -1;
+    int ret = OMPI_SUCCESS;
 
     ret = check_sync_state(module, target, false);
     if (ret != OMPI_SUCCESS) {
@@ -919,13 +965,7 @@ int ompi_osc_ucx_fetch_and_op(const void *origin_addr, void *result_addr,
             }
         }
 
-        if (module->flavor == MPI_WIN_FLAVOR_DYNAMIC) {
-            ret = get_dynamic_win_info(remote_addr, module, target, &win_idx);
-            if (ret != OMPI_SUCCESS) {
-                return ret;
-            }
-            mem = module->local_dynamic_win_info[win_idx].mem;
-        }
+        CHECK_DYNAMIC_WIN(mem, remote_addr, module, target, ret);
 
         value = origin_addr ? opal_common_ucx_load_uint64(origin_addr, dt_bytes) : 0;
 
@@ -964,7 +1004,6 @@ int get_accumulate_req(const void *origin_addr, int origin_count,
                        ompi_osc_ucx_request_t *ucx_req) {
     ompi_osc_ucx_module_t *module = (ompi_osc_ucx_module_t*) win->w_osc_module;
     int ret = OMPI_SUCCESS;
-    int win_idx = -1;
     uint64_t remote_addr = (module->addrs[target]) + target_disp *
         OSC_UCX_GET_DISP(module, target);
     opal_common_ucx_wpmem_t *mem = module->mem;
@@ -983,13 +1022,7 @@ int get_accumulate_req(const void *origin_addr, int origin_count,
                                       target_disp, result_addr, ucx_req);
     }
 
-    if (module->flavor == MPI_WIN_FLAVOR_DYNAMIC) {
-        ret = get_dynamic_win_info(remote_addr, module, target, &win_idx);
-        if (ret != OMPI_SUCCESS) {
-            return ret;
-        }
-        mem = module->local_dynamic_win_info[win_idx].mem;
-    }
+    CHECK_DYNAMIC_WIN(mem, remote_addr, module, target, ret);
 
     ret = start_atomicity(module, target, &lock_acquired);
     if (ret != OMPI_SUCCESS) {
@@ -1131,20 +1164,14 @@ int ompi_osc_ucx_rput(const void *origin_addr, int origin_count,
     opal_common_ucx_wpmem_t *mem = module->mem;
     uint64_t remote_addr = (module->state_addrs[target]) + OSC_UCX_STATE_REQ_FLAG_OFFSET;
     ompi_osc_ucx_request_t *ucx_req = NULL;
-    int ret = OMPI_SUCCESS, win_idx = -1;
+    int ret = OMPI_SUCCESS;
 
     ret = check_sync_state(module, target, true);
     if (ret != OMPI_SUCCESS) {
         return ret;
     }
 
-    if (module->flavor == MPI_WIN_FLAVOR_DYNAMIC) {
-        ret = get_dynamic_win_info(remote_addr, module, target, &win_idx);
-        if (ret != OMPI_SUCCESS) {
-            return ret;
-        }
-        mem = module->local_dynamic_win_info[win_idx].mem;
-    }
+    CHECK_DYNAMIC_WIN(mem, remote_addr, module, target, ret);
 
     OMPI_OSC_UCX_REQUEST_ALLOC(win, ucx_req);
     assert(NULL != ucx_req);
@@ -1186,20 +1213,14 @@ int ompi_osc_ucx_rget(void *origin_addr, int origin_count,
     opal_common_ucx_wpmem_t *mem = module->mem;
     uint64_t remote_addr = (module->state_addrs[target]) + OSC_UCX_STATE_REQ_FLAG_OFFSET;
     ompi_osc_ucx_request_t *ucx_req = NULL;
-    int ret = OMPI_SUCCESS, win_idx = -1;
+    int ret = OMPI_SUCCESS;
 
     ret = check_sync_state(module, target, true);
     if (ret != OMPI_SUCCESS) {
         return ret;
     }
 
-    if (module->flavor == MPI_WIN_FLAVOR_DYNAMIC) {
-        ret = get_dynamic_win_info(remote_addr, module, target, &win_idx);
-        if (ret != OMPI_SUCCESS) {
-            return ret;
-        }
-        mem = module->local_dynamic_win_info[win_idx].mem;
-    }
+    CHECK_DYNAMIC_WIN(mem, remote_addr, module, target, ret);
 
     OMPI_OSC_UCX_REQUEST_ALLOC(win, ucx_req);
     assert(NULL != ucx_req);

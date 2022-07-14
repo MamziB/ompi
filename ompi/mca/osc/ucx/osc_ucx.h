@@ -124,6 +124,7 @@ typedef struct ompi_osc_ucx_module {
     opal_common_ucx_ctx_t *ctx;
     opal_common_ucx_wpmem_t *mem;
     opal_common_ucx_wpmem_t *state_mem;
+    opal_common_ucx_wpmem_t *dynamic_mem;
 
     bool noncontig_shared_win;
     size_t *sizes;
