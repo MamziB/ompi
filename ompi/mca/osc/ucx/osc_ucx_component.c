@@ -399,7 +399,7 @@ int ompi_osc_ucx_shared_query(struct ompi_win_t *win, int rank, size_t *size,
 
     if (MPI_PROC_NULL != rank) {
         *size = module->sizes[rank];
-        *((void**) baseptr) = module->shmem_addrs[rank];
+        *((void**) baseptr) = (void *)module->shmem_addrs[rank];
         if (module->disp_unit == -1) {
             *disp_unit = module->disp_units[rank];
         } else {
@@ -414,7 +414,7 @@ int ompi_osc_ucx_shared_query(struct ompi_win_t *win, int rank, size_t *size,
         for (i = 0 ; i < ompi_comm_size(module->comm) ; ++i) {
             if (0 != module->sizes[i]) {
                 *size = module->sizes[i];
-                *((void**) baseptr) = module->shmem_addrs[i];
+                *((void**) baseptr) = (void *)module->shmem_addrs[i];
                 if (module->disp_unit == -1) {
                     *disp_unit = module->disp_units[rank];
                 } else {
@@ -694,7 +694,7 @@ select_unlock:
         free(rbuf);
 
         module->size = module->sizes[ompi_comm_rank(module->comm)];
-        *base = module->shmem_addrs[ompi_comm_rank(module->comm)];
+        *base = (void *)module->shmem_addrs[ompi_comm_rank(module->comm)];
     }
 
     void **mem_base = base;
@@ -740,11 +740,11 @@ select_unlock:
     /* exchange window addrs */
     if (flavor == MPI_WIN_FLAVOR_ALLOCATE || flavor == MPI_WIN_FLAVOR_CREATE ||
             flavor == MPI_WIN_FLAVOR_SHARED) {
-        my_info[0] = *base;
+        my_info[0] = (uint64_t)*base;
     } else if (flavor == MPI_WIN_FLAVOR_DYNAMIC) {
-        my_info[0] = dynamic_base;
+        my_info[0] = (uint64_t)dynamic_base;
     }
-    my_info[1] = state_base;
+    my_info[1] = (uint64_t)state_base;
 
     recv_buf = (char *)calloc(comm_size, 2 * sizeof(uint64_t));
     ret = comm->c_coll->coll_allgather((void *)my_info, 2 * sizeof(uint64_t),
@@ -856,7 +856,14 @@ int ompi_osc_ucx_win_attach(struct ompi_win_t *win, void *base, size_t len) {
     int insert_index = -1, contain_index;
     int ret = OMPI_SUCCESS;
 
+    ompi_osc_ucx_lock(MPI_LOCK_EXCLUSIVE,
+            ompi_comm_rank(module->comm), 0, win);
+
     if (module->state.dynamic_win_count >= OMPI_OSC_UCX_ATTACH_MAX) {
+        OSC_UCX_ERROR("Dynamic window attach failed: Cannot satisfy %d attached windows. "
+                "Max attached windows is %d \n",
+                module->state.dynamic_win_count+1,
+                OMPI_OSC_UCX_ATTACH_MAX);
         return OMPI_ERR_TEMP_OUT_OF_RESOURCE;
     }
 
@@ -866,6 +873,7 @@ int ompi_osc_ucx_win_attach(struct ompi_win_t *win, void *base, size_t len) {
                                                                (uint64_t)base, len, &insert_index);
         if (contain_index >= 0) {
             module->local_dynamic_win_info[contain_index].refcnt++;
+            ompi_osc_ucx_unlock(ompi_comm_rank(module->comm), win);
             return ret;
         }
 
@@ -902,12 +910,17 @@ int ompi_osc_ucx_win_attach(struct ompi_win_t *win, void *base, size_t len) {
     module->local_dynamic_win_info[insert_index].refcnt++;
     module->state.dynamic_win_count++;
 
+    ompi_osc_ucx_unlock(ompi_comm_rank(module->comm), win);
+
     return ret;
 }
 
 int ompi_osc_ucx_win_detach(struct ompi_win_t *win, const void *base) {
     ompi_osc_ucx_module_t *module = (ompi_osc_ucx_module_t*) win->w_osc_module;
     int insert, contain;
+
+    ompi_osc_ucx_lock(MPI_LOCK_EXCLUSIVE,
+            ompi_comm_rank(module->comm), 0, win);
 
     assert(module->state.dynamic_win_count > 0);
 
@@ -918,6 +931,7 @@ int ompi_osc_ucx_win_detach(struct ompi_win_t *win, const void *base) {
 
     /* if we can't find region - just exit */
     if (contain < 0) {
+        ompi_osc_ucx_unlock(ompi_comm_rank(module->comm), win);
         return OMPI_SUCCESS;
     }
 
@@ -933,6 +947,8 @@ int ompi_osc_ucx_win_detach(struct ompi_win_t *win, const void *base) {
 
         module->state.dynamic_win_count--;
     }
+
+    ompi_osc_ucx_unlock(ompi_comm_rank(module->comm), win);
 
     return OMPI_SUCCESS;
 }
@@ -974,8 +990,8 @@ int ompi_osc_ucx_free(struct ompi_win_t *win) {
         }
         module->state.dynamic_win_count = 0;
 
-        if (module->addrs[ompi_comm_rank(module->comm)] != NULL) {
-            free(module->addrs[ompi_comm_rank(module->comm)]);
+        if (module->addrs[ompi_comm_rank(module->comm)] != 0) {
+            free((void *)module->addrs[ompi_comm_rank(module->comm)]);
         }
     }
 
