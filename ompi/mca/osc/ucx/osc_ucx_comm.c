@@ -983,13 +983,13 @@ int get_accumulate_req(const void *origin_addr, int origin_count,
         return ret;
     }
 
-    ret = opal_common_ucx_ctx_flush(module->ctx, OPAL_COMMON_UCX_SCOPE_EP, target);
-    if (ret != OMPI_SUCCESS) {
-        return ret;
-    }
-
     if (op != &ompi_mpi_op_no_op.op) {
         if (op == &ompi_mpi_op_replace.op) {
+            ret = opal_common_ucx_ctx_flush(module->ctx, OPAL_COMMON_UCX_SCOPE_EP, target);
+            if (ret != OMPI_SUCCESS) {
+                return ret;
+            }
+
             ret = ompi_osc_ucx_put(origin_addr, origin_count, origin_dt,
                                    target, target_disp, target_count,
                                    target_dt, win);
