@@ -727,6 +727,11 @@ int accumulate_req(const void *origin_addr, int origin_count,
 
     }
 
+    ret = opal_common_ucx_ctx_flush(module->ctx, OPAL_COMMON_UCX_SCOPE_EP, target);
+    if (ret != OPAL_SUCCESS) {
+        return ret;
+    }
+
     if (NULL != ucx_req) {
         // nothing to wait for, mark request as completed
         ompi_request_complete(&ucx_req->super, true);
@@ -1040,6 +1045,11 @@ int get_accumulate_req(const void *origin_addr, int origin_count,
                 return ret;
             }
         }
+    }
+
+    ret = opal_common_ucx_ctx_flush(module->ctx, OPAL_COMMON_UCX_SCOPE_EP, target);
+    if (ret != OPAL_SUCCESS) {
+        return ret;
     }
 
     if (NULL != ucx_req) {
