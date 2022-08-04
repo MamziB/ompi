@@ -27,6 +27,8 @@
 #define OMPI_OSC_UCX_ATTACH_MAX    48
 #define OMPI_OSC_UCX_MEM_ADDR_MAX_LEN  1024
 
+//extern bool mpi_thread_multiple_enabled;
+
 typedef struct ompi_osc_ucx_component {
     ompi_osc_base_component_t super;
     opal_common_ucx_wpool_t *wpool;
@@ -149,6 +151,15 @@ typedef struct ompi_osc_ucx_lock {
 
 #define OSC_UCX_GET_EP(comm_, rank_) (ompi_comm_peer_lookup(comm_, rank_)->proc_endpoints[OMPI_PROC_ENDPOINT_TAG_UCX])
 #define OSC_UCX_GET_DISP(module_, rank_) ((module_->disp_unit < 0) ? module_->disp_units[rank_] : module_->disp_unit)
+
+extern bool mpi_thread_multiple_enabled;
+
+#define OSC_UCX_GET_DEFAULT_EP(_ep_ptr, _comm, _target)                         \
+    if (mpi_thread_multiple_enabled) {                                  \
+        _ep_ptr = NULL;                                                 \
+    } else {                                                            \
+        _ep_ptr = (ucp_ep_h *)&(OSC_UCX_GET_EP(_comm, _target));        \
+    }
 
 int ompi_osc_ucx_shared_query(struct ompi_win_t *win, int rank, size_t *size,
         int *disp_unit, void * baseptr);

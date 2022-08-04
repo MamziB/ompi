@@ -452,6 +452,7 @@ static int component_select(struct ompi_win_t *win, void **base, size_t size, in
     /* May be called concurrently - protect */
     _osc_ucx_init_lock();
 
+
     if (mca_osc_ucx_component.env_initialized == false) {
         /* Lazy initialization of the global state.
          * As not all of the MPI applications are using One-Sided functionality
@@ -867,6 +868,8 @@ inline int ompi_osc_state_lock(
     bool                   force_lock) {
     uint64_t result_value = -1;
     uint64_t remote_addr = (module->state_addrs)[target] + OSC_UCX_STATE_ACC_LOCK_OFFSET;
+    ucp_ep_h *ep;
+    OSC_UCX_GET_DEFAULT_EP(ep, module->comm, target);
     int ret = OMPI_SUCCESS;
 
     if (force_lock || ompi_osc_need_acc_lock(module, target)) {
@@ -874,7 +877,7 @@ inline int ompi_osc_state_lock(
             ret = opal_common_ucx_wpmem_cmpswp(module->state_mem,
                                             TARGET_LOCK_UNLOCKED, TARGET_LOCK_EXCLUSIVE,
                                             target, &result_value, sizeof(result_value),
-                                            remote_addr);
+                                            remote_addr, ep);
             if (ret != OMPI_SUCCESS) {
                 OSC_UCX_VERBOSE(1, "opal_common_ucx_mem_cmpswp failed: %d", ret);
                 return OMPI_ERROR;
@@ -900,6 +903,8 @@ inline int ompi_osc_state_unlock(
     bool                   lock_acquired,
     void                  *free_ptr) {
     uint64_t remote_addr = (module->state_addrs)[target] + OSC_UCX_STATE_ACC_LOCK_OFFSET;
+    ucp_ep_h *ep;
+    OSC_UCX_GET_DEFAULT_EP(ep, module->comm, target);
     int ret = OMPI_SUCCESS;
 
     if (lock_acquired) {
@@ -914,7 +919,7 @@ inline int ompi_osc_state_unlock(
         ret = opal_common_ucx_wpmem_fetch(module->state_mem,
                                         UCP_ATOMIC_FETCH_OP_SWAP, TARGET_LOCK_UNLOCKED,
                                         target, &result_value, sizeof(result_value),
-                                        remote_addr);
+                                        remote_addr, ep);
         assert(result_value == TARGET_LOCK_EXCLUSIVE);
     } else if (NULL != free_ptr){
         /* flush before freeing the buffer */
