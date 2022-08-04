@@ -154,7 +154,7 @@ typedef struct ompi_osc_ucx_lock {
 
 extern bool mpi_thread_multiple_enabled;
 
-#define OSC_UCX_GET_DEFAULT_EP(_ep_ptr, _comm, _target)                         \
+#define OSC_UCX_GET_DEFAULT_EP(_ep_ptr, _comm, _target)                 \
     if (mpi_thread_multiple_enabled) {                                  \
         _ep_ptr = NULL;                                                 \
     } else {                                                            \

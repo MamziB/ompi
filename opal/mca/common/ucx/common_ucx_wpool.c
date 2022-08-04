@@ -723,15 +723,20 @@ OPAL_DECLSPEC int opal_common_ucx_tlocal_fetch_spath(opal_common_ucx_wpmem_t *me
 
     /* Obtain the endpoint */
     if (OPAL_UNLIKELY(NULL == winfo->endpoints[target])) {
-        if (mpi_thread_multiple_enabled || (*dflt_ep) == NULL) {
+        if (mpi_thread_multiple_enabled || (dflt_ep == NULL) ||
+                (*dflt_ep == NULL)) {
             rc = _tlocal_ctx_connect(ctx_rec, target);
             if (rc != OPAL_SUCCESS) {
                 return rc;
             }
-            if (!mpi_thread_multiple_enabled && (*dflt_ep) == NULL) {
+            if (!mpi_thread_multiple_enabled && (dflt_ep != NULL) &&
+                    (*dflt_ep == NULL)) {
                 /* set the proc ep */
                 *dflt_ep = winfo->endpoints[target];
             }
+        } else {
+            /* reuse the previously created ep */
+            winfo->endpoints[target] = *dflt_ep;
         }
     }
     ep = winfo->endpoints[target];
