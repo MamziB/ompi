@@ -16,8 +16,18 @@
 
 #include "ompi/request/request.h"
 
+typedef struct ompi_osc_ucx_accumulate_request {
+    bool is_accumulate;
+    struct ompi_op_t *op;
+    bool lock_acquired;
+    ompi_osc_ucx_module_t *module;
+    int target;
+    struct ompi_win_t *win;
+} ompi_osc_ucx_accumulate_request_t;
+
 typedef struct ompi_osc_ucx_request {
     ompi_request_t super;
+    ompi_osc_ucx_accumulate_request_t acc;
 } ompi_osc_ucx_request_t;
 
 OBJ_CLASS_DECLARATION(ompi_osc_ucx_request_t);
@@ -39,6 +49,12 @@ OBJ_CLASS_DECLARATION(ompi_osc_ucx_request_t);
         req->super.req_complete = false;                                \
         req->super.req_state = OMPI_REQUEST_ACTIVE;                     \
         req->super.req_status.MPI_ERROR = MPI_SUCCESS;                  \
+        req->acc.op = MPI_NO_OP;                                        \
+        req->acc.is_accumulate = false;                                 \
+        req->acc.module = NULL;                                         \
+        req->acc.target = -1;                                           \
+        req->acc.lock_acquired = false;                                 \
+        req->acc.win = NULL;                                 \
     } while (0)
 
 #define OMPI_OSC_UCX_REQUEST_RETURN(req)                                \

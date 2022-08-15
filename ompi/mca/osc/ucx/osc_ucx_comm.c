@@ -302,7 +302,7 @@ static inline int get_dynamic_win_info(uint64_t remote_addr, ompi_osc_ucx_module
     contain = ompi_osc_find_attached_region_position(temp_dynamic_wins, 0, win_count - 1,
                                                      remote_addr, 1, &insert);
     if (contain < 0 || contain >= (int)win_count) {
-        OSC_UCX_ERROR("Dynamic window index not found contain: %d win_count: %d\n",
+        OSC_UCX_ERROR("Dynamic window index not found contain: %d win_count: %" PRIu64 "\n",
                 contain, win_count);
         ret = MPI_ERR_RMA_RANGE;
         goto cleanup;
@@ -317,7 +317,6 @@ static inline int get_dynamic_win_info(uint64_t remote_addr, ompi_osc_ucx_module
     }
     
      if (mem_rec == NULL) {
-        ucp_ep_h ep = NULL;
         if (!mpi_thread_multiple_enabled) {
             ep = OSC_UCX_GET_EP(module->mem->comm, target);
         }
@@ -1249,6 +1248,128 @@ int ompi_osc_ucx_rget_accumulate(const void *origin_addr, int origin_count,
     }
 
     *request = &ucx_req->super;
+
+    return ret;
+}
+
+static inline int acc_rput(const void *origin_addr, int origin_count,
+                      struct ompi_datatype_t *origin_dt,
+                      int target, ptrdiff_t target_disp, int target_count,
+                      struct ompi_datatype_t *target_dt, struct ompi_op_t *op,
+                      struct ompi_win_t *win, bool lock_acquired) {
+    ompi_osc_ucx_module_t *module = (ompi_osc_ucx_module_t*) win->w_osc_module;
+    ucp_ep_h *ep;
+    OSC_UCX_GET_DEFAULT_EP(ep, module->comm, target);
+    opal_common_ucx_wpmem_t *mem = module->mem;
+    uint64_t remote_addr = (module->state_addrs[target]) + OSC_UCX_STATE_REQ_FLAG_OFFSET;
+    ompi_osc_ucx_request_t *ucx_req = NULL;
+    int ret = OMPI_SUCCESS;
+
+    ret = check_sync_state(module, target, true);
+    if (ret != OMPI_SUCCESS) {
+        return ret;
+    }
+
+    CHECK_DYNAMIC_WIN(remote_addr, module, target, ret, true);
+
+    OMPI_OSC_UCX_REQUEST_ALLOC(win, ucx_req);
+    assert(NULL != ucx_req);
+
+    ret = ompi_osc_ucx_put(origin_addr, origin_count, origin_dt, target, target_disp,
+                           target_count, target_dt, win);
+    if (ret != OMPI_SUCCESS) {
+        return ret;
+    }
+
+    mca_osc_ucx_component.num_incomplete_req_ops++;
+    ret = opal_common_ucx_wpmem_flush_ep_nb(mem, target, req_completion, ucx_req, ep);
+
+    if (ret != OMPI_SUCCESS) {
+        /* fallback to using an atomic op to acquire a request handle */
+        ret = opal_common_ucx_wpmem_fence(mem);
+        if (ret != OMPI_SUCCESS) {
+            OSC_UCX_VERBOSE(1, "opal_common_ucx_mem_fence failed: %d", ret);
+            return OMPI_ERROR;
+        }
+
+        ret = opal_common_ucx_wpmem_fetch_nb(mem, UCP_ATOMIC_FETCH_OP_FADD,
+                                            0, target, &(module->req_result),
+                                            sizeof(uint64_t), remote_addr & (~0x7),
+                                            req_completion, ucx_req, ep);
+        if (ret != OMPI_SUCCESS) {
+            OMPI_OSC_UCX_REQUEST_RETURN(ucx_req);
+            return ret;
+        }
+    }
+
+    ucx_req->acc.op = op;
+    ucx_req->acc.is_accumulate = true;
+    ucx_req->acc.module = module;
+    ucx_req->acc.target = target;
+    ucx_req->acc.lock_acquired = lock_acquired;
+    ucx_req->acc.win = win;
+
+    return ret;
+}
+
+/* Nonblocking variant of accumulate. reduce+put happens inside completion call back 
+ * of rget */
+int ompi_osc_ucx_accumulate_nb(const void *origin_addr, int origin_count,
+                            struct ompi_datatype_t *origin_dt,
+                            int target, ptrdiff_t target_disp, int target_count,
+                            struct ompi_datatype_t *target_dt,
+                            struct ompi_op_t *op, struct ompi_win_t *win) {
+
+    ompi_osc_ucx_module_t *module = (ompi_osc_ucx_module_t*) win->w_osc_module;
+    int ret = OMPI_SUCCESS;
+    uint64_t remote_addr = (module->addrs[target]) + target_disp *
+        OSC_UCX_GET_DISP(module, target);
+    opal_common_ucx_wpmem_t *mem = module->mem;
+    void *free_ptr = NULL;
+    bool lock_acquired = false;
+    struct ompi_request_t *request = NULL;
+
+    ret = check_sync_state(module, target, false);
+    if (ret != OMPI_SUCCESS) {
+        return ret;
+    }
+
+    if (op == &ompi_mpi_op_no_op.op) {
+        return ret;
+    }
+
+    /* rely on UCX network atomics if the user told us that it safe */
+    if (use_atomic_op(module, op, target_disp, origin_dt, target_dt, origin_count, target_count)) {
+        return do_atomic_op_intrinsic(module, op, target,
+                                      origin_addr, origin_count, origin_dt,
+                                      target_disp, NULL, NULL /* TODO should we
+                                                                 send ucx_req
+                                                                 instead and
+                                                                 make it
+                                                                 nonblocking?*/
+                                      );
+    }
+
+    /* Start atomicity by acquiring acc lock  */
+    ret = ompi_osc_state_lock(module, target, &lock_acquired, false);
+    if (ret != OMPI_SUCCESS) {
+        return ret;
+    }
+
+    CHECK_DYNAMIC_WIN(remote_addr, module, target, ret, !lock_acquired);
+
+    if (op == &ompi_mpi_op_replace.op) {
+        /* No need for rget, just use rput and realize when to release the lock
+        TODO Do we need to keep a list of outstanding requests? */
+        ret = acc_rput(origin_addr, origin_count, origin_dt, target,
+                target_disp, target_count, target_dt, op,  win, lock_acquired);
+        if (ret != OMPI_SUCCESS) {
+            return ret;
+        }
+    } else {
+        fprintf(stderr, "NOT SUPPORTED \n");
+        return -1;
+    }
 
     return ret;
 }

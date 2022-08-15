@@ -341,7 +341,7 @@ OPAL_DECLSPEC int opal_common_ucx_wpctx_create(opal_common_ucx_wpool_t *wpool, i
     opal_common_ucx_ctx_t *ctx = calloc(1, sizeof(*ctx));
     int ret = OPAL_SUCCESS;
 
-    OBJ_CONSTRUCT(&ctx->mutex, opal_mutex_t);
+    OBJ_CONSTRUCT(&ctx->mutex, opal_recursive_mutex_t);
     OBJ_CONSTRUCT(&ctx->ctx_records, opal_list_t);
 
     ctx->wpool = wpool;

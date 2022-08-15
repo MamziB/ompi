@@ -89,7 +89,7 @@ ompi_osc_ucx_module_t ompi_osc_ucx_module_template = {
 
         .osc_put = ompi_osc_ucx_put,
         .osc_get = ompi_osc_ucx_get,
-        .osc_accumulate = ompi_osc_ucx_accumulate,
+        .osc_accumulate = ompi_osc_ucx_accumulate_nb,// ompi_osc_ucx_accumulate,
         .osc_compare_and_swap = ompi_osc_ucx_compare_and_swap,
         .osc_fetch_and_op = ompi_osc_ucx_fetch_and_op,
         .osc_get_accumulate = ompi_osc_ucx_get_accumulate,
@@ -932,6 +932,44 @@ inline int ompi_osc_state_unlock(
     if (ret != OMPI_SUCCESS) {
         OSC_UCX_VERBOSE(1, "opal_common_ucx_mem_fetch failed: %d", ret);
         return OMPI_ERROR;
+    }
+
+    return ret;
+}
+
+inline int ompi_osc_state_unlock_nb(
+    ompi_osc_ucx_module_t *module,
+    int                    target,
+    bool                   lock_acquired,
+    struct ompi_win_t *win) {
+    uint64_t remote_addr = (module->state_addrs)[target] + OSC_UCX_STATE_ACC_LOCK_OFFSET;
+    ucp_ep_h *ep;
+    OSC_UCX_GET_DEFAULT_EP(ep, module->comm, target);
+    int ret = OMPI_SUCCESS;
+    ompi_osc_ucx_request_t *ucx_req = NULL;
+
+    if (lock_acquired) {
+        uint64_t result_value = 0;
+        /* fence any still active operations */
+        ret = opal_common_ucx_wpmem_fence(module->mem);
+        if (ret != OMPI_SUCCESS) {
+            OSC_UCX_VERBOSE(1, "opal_common_ucx_mem_fence failed: %d", ret);
+            return OMPI_ERROR;
+        }
+
+        OMPI_OSC_UCX_REQUEST_ALLOC(win, ucx_req);
+        assert(NULL != ucx_req);
+
+        mca_osc_ucx_component.num_incomplete_req_ops++;
+        ret = opal_common_ucx_wpmem_fetch_nb(module->state_mem,
+                                        UCP_ATOMIC_FETCH_OP_SWAP, TARGET_LOCK_UNLOCKED,
+                                        target, &result_value, sizeof(result_value),
+                                        remote_addr, req_completion, ucx_req, ep);
+        if (ret != OMPI_SUCCESS) {
+            OSC_UCX_VERBOSE(1, "opal_common_ucx_wpmem_fetch_nb failed: %d", ret);
+            OMPI_OSC_UCX_REQUEST_RETURN(ucx_req);
+            return ret;
+        }
     }
 
     return ret;
