@@ -949,7 +949,6 @@ inline int ompi_osc_state_unlock_nb(
     ompi_osc_ucx_request_t *ucx_req = NULL;
 
     if (lock_acquired) {
-        uint64_t result_value = 0;
         /* fence any still active operations */
         ret = opal_common_ucx_wpmem_fence(module->mem);
         if (ret != OMPI_SUCCESS) {
@@ -963,7 +962,7 @@ inline int ompi_osc_state_unlock_nb(
         mca_osc_ucx_component.num_incomplete_req_ops++;
         ret = opal_common_ucx_wpmem_fetch_nb(module->state_mem,
                                         UCP_ATOMIC_FETCH_OP_SWAP, TARGET_LOCK_UNLOCKED,
-                                        target, &result_value, sizeof(result_value),
+                                        target, &(module->req_result), sizeof(module->req_result),
                                         remote_addr, req_completion, ucx_req, ep);
         if (ret != OMPI_SUCCESS) {
             OSC_UCX_VERBOSE(1, "opal_common_ucx_wpmem_fetch_nb failed: %d", ret);
