@@ -45,24 +45,5 @@ static void request_construct(ompi_osc_ucx_request_t *request)
     request->super.req_cancel = request_cancel;
 }
 
-void req_completion(void *request) {
-    ompi_osc_ucx_request_t *req = (ompi_osc_ucx_request_t *)request;
-
-    if (req->acc.is_accumulate) {
-        /* This is either rget (when it is NOT MPI_REPLACE) or rput
-         * (MPI_REPLACE) */
-        if (req->acc.op == &ompi_mpi_op_replace.op) {
-           /* we have updated the target window. It's time to release the
-            * atomicity acc state lock */
-            ompi_osc_state_unlock_nb(req->acc.module, req->acc.target,
-                    req->acc.lock_acquired, req->acc.win);
-        }
-    }
-
-    mca_osc_ucx_component.num_incomplete_req_ops--;
-    ompi_request_complete(&(req->super), true);
-    assert(mca_osc_ucx_component.num_incomplete_req_ops >= 0);
-}
-
 OBJ_CLASS_INSTANCE(ompi_osc_ucx_request_t, ompi_request_t,
                    request_construct, NULL);

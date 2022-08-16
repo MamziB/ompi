@@ -23,6 +23,15 @@ typedef struct ompi_osc_ucx_accumulate_request {
     ompi_osc_ucx_module_t *module;
     int target;
     struct ompi_win_t *win;
+    void *origin_addr;;
+    int origin_count;
+    struct ompi_datatype_t *origin_dt;
+    void *stage_addr;
+    int stage_count;
+    struct ompi_datatype_t *stage_dt;
+    struct ompi_datatype_t *target_dt;
+    int target_disp;
+    int target_count;
 } ompi_osc_ucx_accumulate_request_t;
 
 typedef struct ompi_osc_ucx_request {
@@ -54,7 +63,16 @@ OBJ_CLASS_DECLARATION(ompi_osc_ucx_request_t);
         req->acc.module = NULL;                                         \
         req->acc.target = -1;                                           \
         req->acc.lock_acquired = false;                                 \
-        req->acc.win = NULL;                                 \
+        req->acc.win = NULL;                                            \
+        req->acc.origin_addr = NULL;                                    \
+        req->acc.origin_count = 0;                                      \
+        req->acc.origin_dt = NULL;                                      \
+        req->acc.stage_addr = NULL;                                     \
+        req->acc.stage_count = 0;                                       \
+        req->acc.stage_dt = NULL;                                       \
+        req->acc.target_dt = NULL;                                      \
+        req->acc.target_count = 0;                                      \
+        req->acc.target_disp = 0;                                       \
     } while (0)
 
 #define OMPI_OSC_UCX_REQUEST_RETURN(req)                                \
