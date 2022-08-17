@@ -1442,8 +1442,9 @@ void req_completion(void *request) {
                 ret = create_iov_list(origin_addr, origin_count, origin_dt,
                                       &origin_ucx_iov, &origin_ucx_iov_count);
                 if (ret != OMPI_SUCCESS) {
+                    OSC_UCX_ERROR("create_iov_list failed ret= %d\n", ret);
                     free(temp_addr);
-                    goto failed;
+                    return;
                 }
 
                 if ((op != &ompi_mpi_op_maxloc.op && op != &ompi_mpi_op_minloc.op) ||
@@ -1480,8 +1481,9 @@ void req_completion(void *request) {
             ret = ompi_osc_ucx_put(temp_addr, (int)temp_count, temp_dt, req->acc.target, req->acc.target_disp,
                     req->acc.target_count, req->acc.target_dt, req->acc.win);
             if (ret != OMPI_SUCCESS) {
+                OSC_UCX_ERROR("ompi_osc_ucx_put failed ret= %d\n", ret);
                 free(temp_addr);
-                goto failed;
+                return;
             }
         }
 
@@ -1494,7 +1496,5 @@ void req_completion(void *request) {
     mca_osc_ucx_component.num_incomplete_req_ops--;
     ompi_request_complete(&(req->super), true);
     assert(mca_osc_ucx_component.num_incomplete_req_ops >= 0);
-
-failed:
-
+    return;
 }

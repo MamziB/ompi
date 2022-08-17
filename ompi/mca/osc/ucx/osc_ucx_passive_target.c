@@ -163,12 +163,12 @@ int ompi_osc_ucx_unlock(int target, struct ompi_win_t *win) {
         return OMPI_ERR_RMA_SYNC;
     }
 
-    opal_hash_table_remove_value_uint32(&module->outstanding_locks,
-                                        (uint32_t)target);
     ret = opal_common_ucx_ctx_flush(module->ctx, OPAL_COMMON_UCX_SCOPE_EP, target);
     if (ret != OMPI_SUCCESS) {
         return ret;
     }
+    opal_hash_table_remove_value_uint32(&module->outstanding_locks,
+                                        (uint32_t)target);
 
     if (lock->is_nocheck == false) {
         if (lock->type == LOCK_EXCLUSIVE) {

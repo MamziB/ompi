@@ -89,7 +89,7 @@ ompi_osc_ucx_module_t ompi_osc_ucx_module_template = {
 
         .osc_put = ompi_osc_ucx_put,
         .osc_get = ompi_osc_ucx_get,
-        .osc_accumulate = ompi_osc_ucx_accumulate_nb,// ompi_osc_ucx_accumulate,
+        .osc_accumulate = ompi_osc_ucx_accumulate_nb,
         .osc_compare_and_swap = ompi_osc_ucx_compare_and_swap,
         .osc_fetch_and_op = ompi_osc_ucx_fetch_and_op,
         .osc_get_accumulate = ompi_osc_ucx_get_accumulate,
