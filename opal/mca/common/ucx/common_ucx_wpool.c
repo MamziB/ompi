@@ -31,7 +31,7 @@ __thread FILE *tls_pf = NULL;
 __thread int initialized = 0;
 #endif
 
-bool mpi_thread_multiple_enabled = false;
+bool mpi_thread_multiple_enabled = true;
 
 static _ctx_record_t *_tlocal_add_ctx_rec(opal_common_ucx_ctx_t *ctx);
 static inline _ctx_record_t *_tlocal_get_ctx_rec(opal_tsd_tracked_key_t tls_key);
