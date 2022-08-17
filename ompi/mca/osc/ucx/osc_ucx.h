@@ -27,7 +27,6 @@
 #define OMPI_OSC_UCX_ATTACH_MAX    48
 #define OMPI_OSC_UCX_MEM_ADDR_MAX_LEN  1024
 
-//extern bool mpi_thread_multiple_enabled;
 
 typedef struct ompi_osc_ucx_component {
     ompi_osc_base_component_t super;
@@ -180,6 +179,11 @@ int ompi_osc_ucx_accumulate(const void *origin_addr, int origin_count,
                             int target, ptrdiff_t target_disp, int target_count,
                             struct ompi_datatype_t *target_dt,
                             struct ompi_op_t *op, struct ompi_win_t *win);
+int ompi_osc_ucx_accumulate_nb(const void *origin_addr, int origin_count,
+                            struct ompi_datatype_t *origin_dt,
+                            int target, ptrdiff_t target_disp, int target_count,
+                            struct ompi_datatype_t *target_dt,
+                            struct ompi_op_t *op, struct ompi_win_t *win);
 int ompi_osc_ucx_compare_and_swap(const void *origin_addr, const void *compare_addr,
                                   void *result_addr, struct ompi_datatype_t *dt,
                                   int target, ptrdiff_t target_disp,
@@ -189,6 +193,13 @@ int ompi_osc_ucx_fetch_and_op(const void *origin_addr, void *result_addr,
                               ptrdiff_t target_disp, struct ompi_op_t *op,
                               struct ompi_win_t *win);
 int ompi_osc_ucx_get_accumulate(const void *origin_addr, int origin_count,
+                                struct ompi_datatype_t *origin_datatype,
+                                void *result_addr, int result_count,
+                                struct ompi_datatype_t *result_datatype,
+                                int target_rank, ptrdiff_t target_disp,
+                                int target_count, struct ompi_datatype_t *target_datatype,
+                                struct ompi_op_t *op, struct ompi_win_t *win);
+int ompi_osc_ucx_get_accumulate_nb(const void *origin_addr, int origin_count,
                                 struct ompi_datatype_t *origin_datatype,
                                 void *result_addr, int result_count,
                                 struct ompi_datatype_t *result_datatype,

@@ -42,6 +42,7 @@ static void _osc_ucx_init_unlock(void)
     }
 }
 
+bool enable_nonblocking_accumulate = false;
 
 static int component_open(void);
 static int component_register(void);
@@ -180,6 +181,9 @@ static int component_register(void) {
     (void) mca_base_component_var_register(&mca_osc_ucx_component.super.osc_version, "acc_single_intrinsic",
                                            description_str, MCA_BASE_VAR_TYPE_BOOL, NULL, 0, 0, OPAL_INFO_LVL_5,
                                            MCA_BASE_VAR_SCOPE_GROUP, &mca_osc_ucx_component.acc_single_intrinsic);
+    (void) mca_base_component_var_register(&mca_osc_ucx_component.super.osc_version, "enable_nonblocking_accumulate",
+                                           description_str, MCA_BASE_VAR_TYPE_BOOL, NULL, 0, 0, OPAL_INFO_LVL_5,
+                                           MCA_BASE_VAR_SCOPE_GROUP, &enable_nonblocking_accumulate);
     free(description_str);
 
     opal_common_ucx_mca_var_register(&mca_osc_ucx_component.super.osc_version);
@@ -513,6 +517,11 @@ select_unlock:
 
     /* fill in the function pointer part */
     memcpy(module, &ompi_osc_ucx_module_template, sizeof(ompi_osc_base_module_t));
+
+    if (enable_nonblocking_accumulate) {
+        module->super.osc_accumulate = ompi_osc_ucx_accumulate_nb; 
+        module->super.osc_get_accumulate = ompi_osc_ucx_get_accumulate_nb;  
+    }
 
     ret = ompi_comm_dup(comm, &module->comm);
     if (ret != OMPI_SUCCESS) {

@@ -744,11 +744,20 @@ int ompi_osc_ucx_accumulate(const void *origin_addr, int origin_count,
                             int target, ptrdiff_t target_disp, int target_count,
                             struct ompi_datatype_t *target_dt,
                             struct ompi_op_t *op, struct ompi_win_t *win) {
-    return ompi_osc_ucx_get_accumulate_nb(origin_addr, origin_count, origin_dt,
-            (void *)NULL, 0, NULL, target, target_disp, target_count, target_dt, op,
-            win, NULL);
-    //return accumulate_req(origin_addr, origin_count, origin_dt, target,
 
+    return accumulate_req(origin_addr, origin_count, origin_dt, target,
+                    target_disp, target_count, target_dt, op, win, NULL);
+}
+
+int ompi_osc_ucx_accumulate_nb(const void *origin_addr, int origin_count,
+                            struct ompi_datatype_t *origin_dt,
+                            int target, ptrdiff_t target_disp, int target_count,
+                            struct ompi_datatype_t *target_dt,
+                            struct ompi_op_t *op, struct ompi_win_t *win) {
+
+    return ompi_osc_ucx_get_accumulate_nonblocking(origin_addr, origin_count,
+                            origin_dt, (void *)NULL, 0, NULL, target, target_disp,
+                            target_count, target_dt, op, win);
 }
 
 static int
@@ -1071,10 +1080,22 @@ int ompi_osc_ucx_get_accumulate(const void *origin_addr, int origin_count,
                                 int target_count, struct ompi_datatype_t *target_dt,
                                 struct ompi_op_t *op, struct ompi_win_t *win) {
 
-    //return get_accumulate_req(origin_addr, origin_count, origin_dt, result_addr,
-    return ompi_osc_ucx_get_accumulate_nb(origin_addr, origin_count, origin_dt, result_addr,
+    return get_accumulate_req(origin_addr, origin_count, origin_dt, result_addr,
                               result_count, result_dt, target, target_disp,
-                              target_count, target_dt, op, win);
+                              target_count, target_dt, op, win, NULL);
+}
+
+int ompi_osc_ucx_get_accumulate_nb(const void *origin_addr, int origin_count,
+                                struct ompi_datatype_t *origin_dt,
+                                void *result_addr, int result_count,
+                                struct ompi_datatype_t *result_dt,
+                                int target, ptrdiff_t target_disp,
+                                int target_count, struct ompi_datatype_t *target_dt,
+                                struct ompi_op_t *op, struct ompi_win_t *win) {
+
+    return ompi_osc_ucx_get_accumulate_nonblocking(origin_addr, origin_count, origin_dt,
+                            result_addr, result_count, result_dt, target, target_disp,
+                            target_count, target_dt, op, win);
 }
 
 int ompi_osc_ucx_rput(const void *origin_addr, int origin_count,
@@ -1334,7 +1355,7 @@ static inline int ompi_osc_ucx_acc_rputget(void *stage_addr, int stage_count,
 
 /* Nonblocking variant of accumulate. reduce+put happens inside completion call back 
  * of rget */
-static int ompi_osc_ucx_get_accumulate_nb(const void *origin_addr, int origin_count,
+static int ompi_osc_ucx_get_accumulate_nonblocking(const void *origin_addr, int origin_count,
                     struct ompi_datatype_t *origin_dt, void *result_addr, int result_count,
                     struct ompi_datatype_t *result_dt, int target, ptrdiff_t target_disp,
                     int target_count, struct ompi_datatype_t *target_dt, struct ompi_op_t
@@ -1437,7 +1458,7 @@ void req_completion(void *request) {
         assert(req->acc.phase != ACC_INIT);
         bool release_lock = false;
         ptrdiff_t temp_lb, temp_extent;
-        void *origin_addr = req->acc.origin_addr;
+        const void *origin_addr = req->acc.origin_addr;
         int origin_count = req->acc.origin_count;
         struct ompi_datatype_t *origin_dt = req->acc.origin_dt;
         void *temp_addr = req->acc.stage_addr;
