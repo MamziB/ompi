@@ -89,7 +89,7 @@ ompi_osc_ucx_module_t ompi_osc_ucx_module_template = {
 
         .osc_put = ompi_osc_ucx_put,
         .osc_get = ompi_osc_ucx_get,
-        .osc_accumulate = ompi_osc_ucx_accumulate_nb,
+        .osc_accumulate = ompi_osc_ucx_accumulate,
         .osc_compare_and_swap = ompi_osc_ucx_compare_and_swap,
         .osc_fetch_and_op = ompi_osc_ucx_fetch_and_op,
         .osc_get_accumulate = ompi_osc_ucx_get_accumulate,
@@ -980,7 +980,7 @@ int ompi_osc_ucx_win_attach(struct ompi_win_t *win, void *base, size_t len) {
     int ret = OMPI_SUCCESS;
 
     if (module->state.dynamic_win_count >= OMPI_OSC_UCX_ATTACH_MAX) {
-        OSC_UCX_ERROR("Dynamic window attach failed: Cannot satisfy %d attached windows. "
+        OSC_UCX_ERROR("Dynamic window attach failed: Cannot satisfy %" PRIu64 "attached windows. "
                 "Max attached windows is %d \n",
                 module->state.dynamic_win_count+1,
                 OMPI_OSC_UCX_ATTACH_MAX);

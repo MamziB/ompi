@@ -180,11 +180,6 @@ int ompi_osc_ucx_accumulate(const void *origin_addr, int origin_count,
                             int target, ptrdiff_t target_disp, int target_count,
                             struct ompi_datatype_t *target_dt,
                             struct ompi_op_t *op, struct ompi_win_t *win);
-int ompi_osc_ucx_accumulate_nb(const void *origin_addr, int origin_count,
-                            struct ompi_datatype_t *origin_dt,
-                            int target, ptrdiff_t target_disp, int target_count,
-                            struct ompi_datatype_t *target_dt,
-                            struct ompi_op_t *op, struct ompi_win_t *win);
 int ompi_osc_ucx_compare_and_swap(const void *origin_addr, const void *compare_addr,
                                   void *result_addr, struct ompi_datatype_t *dt,
                                   int target, ptrdiff_t target_disp,

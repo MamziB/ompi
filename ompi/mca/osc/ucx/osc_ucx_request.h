@@ -16,14 +16,23 @@
 
 #include "ompi/request/request.h"
 
+
+enum acc_phases {
+    ACC_INIT,
+    ACC_GET_RESULTS_DATA,
+    ACC_GET_STAGE_DATA,
+    ACC_PUT_TARGET_DATA
+};
+
 typedef struct ompi_osc_ucx_accumulate_request {
     bool is_accumulate;
     struct ompi_op_t *op;
+    int phase;
     bool lock_acquired;
     ompi_osc_ucx_module_t *module;
     int target;
     struct ompi_win_t *win;
-    void *origin_addr;;
+    const void *origin_addr;
     int origin_count;
     struct ompi_datatype_t *origin_dt;
     void *stage_addr;
@@ -59,6 +68,7 @@ OBJ_CLASS_DECLARATION(ompi_osc_ucx_request_t);
         req->super.req_state = OMPI_REQUEST_ACTIVE;                     \
         req->super.req_status.MPI_ERROR = MPI_SUCCESS;                  \
         req->acc.op = MPI_NO_OP;                                        \
+        req->acc.phase = ACC_INIT;                                      \
         req->acc.is_accumulate = false;                                 \
         req->acc.module = NULL;                                         \
         req->acc.target = -1;                                           \
