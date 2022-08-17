@@ -171,12 +171,12 @@ int ompi_osc_ucx_complete(struct ompi_win_t *win) {
         return OMPI_ERR_RMA_SYNC;
     }
 
-    module->epoch_type.access = NONE_EPOCH;
-
     ret = opal_common_ucx_ctx_flush(module->ctx, OPAL_COMMON_UCX_SCOPE_WORKER, 0/*ignore*/);
     if (ret != OMPI_SUCCESS) {
         return ret;
     }
+
+    module->epoch_type.access = NONE_EPOCH;
 
     size = ompi_group_size(module->start_group);
     for (i = 0; i < size; i++) {

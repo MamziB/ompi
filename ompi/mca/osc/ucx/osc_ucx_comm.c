@@ -1265,7 +1265,7 @@ static inline int ompi_osc_ucx_acc_rputget(void *stage_addr, int stage_count,
     ompi_osc_ucx_request_t *ucx_req = NULL;
     int ret = OMPI_SUCCESS;
 
-    ret = check_sync_state(module, target, true);
+    ret = check_sync_state(module, target, false);
     if (ret != OMPI_SUCCESS) {
         return ret;
     }
