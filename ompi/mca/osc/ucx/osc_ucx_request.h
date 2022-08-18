@@ -17,6 +17,12 @@
 #include "ompi/request/request.h"
 
 
+enum acc_rma_type {
+    NONE,
+    ACCUMULATE,
+    GET_ACCUMULATE
+};
+
 enum acc_phases {
     ACC_INIT,
     ACC_GET_RESULTS_DATA,
@@ -25,7 +31,7 @@ enum acc_phases {
 };
 
 typedef struct ompi_osc_ucx_accumulate_request {
-    bool is_accumulate;
+    int acc_type;
     struct ompi_op_t *op;
     int phase;
     bool lock_acquired;
@@ -69,7 +75,7 @@ OBJ_CLASS_DECLARATION(ompi_osc_ucx_request_t);
         req->super.req_status.MPI_ERROR = MPI_SUCCESS;                  \
         req->acc.op = MPI_NO_OP;                                        \
         req->acc.phase = ACC_INIT;                                      \
-        req->acc.is_accumulate = false;                                 \
+        req->acc.acc_type = NONE;                                 \
         req->acc.module = NULL;                                         \
         req->acc.target = -1;                                           \
         req->acc.lock_acquired = false;                                 \

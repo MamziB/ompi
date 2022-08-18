@@ -1282,7 +1282,7 @@ static inline int ompi_osc_ucx_acc_rputget(void *stage_addr, int stage_count,
                     int target_count, struct ompi_datatype_t *target_dt, struct ompi_op_t
                     *op, struct ompi_win_t *win, bool lock_acquired, const void
                     *origin_addr, int origin_count, struct ompi_datatype_t *origin_dt, bool is_put,
-                    int phase) {
+                    int phase, int acc_type) {
     ompi_osc_ucx_module_t *module = (ompi_osc_ucx_module_t*) win->w_osc_module;
     ucp_ep_h *ep;
     OSC_UCX_GET_DEFAULT_EP(ep, module->comm, target);
@@ -1301,7 +1301,7 @@ static inline int ompi_osc_ucx_acc_rputget(void *stage_addr, int stage_count,
     OMPI_OSC_UCX_REQUEST_ALLOC(win, ucx_req);
     assert(NULL != ucx_req);
     ucx_req->acc.op = op;
-    ucx_req->acc.is_accumulate = true;
+    ucx_req->acc.acc_type = acc_type;
     ucx_req->acc.phase = phase;
     ucx_req->acc.module = module;
     ucx_req->acc.target = target;
@@ -1399,7 +1399,7 @@ static int ompi_osc_ucx_get_accumulate_nonblocking(const void *origin_addr, int 
         /* This is a get-accumulate operation, so read the target data into result addr */
         ret = ompi_osc_ucx_acc_rputget(result_addr, (int)result_count, result_dt, target,
                 target_disp, target_count, target_dt, op,  win, lock_acquired,
-                origin_addr, origin_count, origin_dt, false, ACC_GET_RESULTS_DATA);
+                origin_addr, origin_count, origin_dt, false, ACC_GET_RESULTS_DATA, GET_ACCUMULATE);
         if (ret != OMPI_SUCCESS) {
             return ret;
         } else if (op == &ompi_mpi_op_no_op.op || op == &ompi_mpi_op_replace.op) {
@@ -1413,7 +1413,7 @@ static int ompi_osc_ucx_get_accumulate_nonblocking(const void *origin_addr, int 
         /* No need for get, just use put and realize when to release the lock */
         ret = ompi_osc_ucx_acc_rputget(NULL, 0, NULL, target, target_disp,
                 target_count, target_dt, op,  win, lock_acquired, origin_addr,
-                origin_count, origin_dt, true, ACC_PUT_TARGET_DATA);
+                origin_count, origin_dt, true, ACC_PUT_TARGET_DATA, ACCUMULATE);
         if (ret != OMPI_SUCCESS) {
             return ret;
         }
@@ -1441,7 +1441,8 @@ static int ompi_osc_ucx_get_accumulate_nonblocking(const void *origin_addr, int 
 
         ret = ompi_osc_ucx_acc_rputget(temp_addr, (int)temp_count, temp_dt, target,
                 target_disp, target_count, target_dt, op,  win, lock_acquired,
-                origin_addr, origin_count, origin_dt, false, ACC_GET_STAGE_DATA);
+                origin_addr, origin_count, origin_dt, false, ACC_GET_STAGE_DATA,
+                (result_addr == NULL) ? ACCUMULATE : GET_ACCUMULATE);
         if (ret != OMPI_SUCCESS) {
             return ret;
         }
@@ -1454,7 +1455,7 @@ void req_completion(void *request) {
     ompi_osc_ucx_request_t *req = (ompi_osc_ucx_request_t *)request;
     int ret = OMPI_SUCCESS;
 
-    if (req->acc.is_accumulate) {
+    if (req->acc.acc_type != NONE) {
         assert(req->acc.phase != ACC_INIT);
         bool release_lock = false;
         ptrdiff_t temp_lb, temp_extent;
@@ -1488,7 +1489,7 @@ void req_completion(void *request) {
                     if (ret != OMPI_SUCCESS) {
                         OSC_UCX_ERROR("ompi_osc_ucx_put failed ret= %d\n", ret);
                         free(temp_addr);
-                        return;
+                        abort();
                     }
                     release_lock = true;
                 }
@@ -1522,7 +1523,7 @@ void req_completion(void *request) {
                     if (ret != OMPI_SUCCESS) {
                         OSC_UCX_ERROR("create_iov_list failed ret= %d\n", ret);
                         free(temp_addr);
-                        return;
+                        abort();
                     }
 
                     if ((op != &ompi_mpi_op_maxloc.op && op != &ompi_mpi_op_minloc.op) ||
@@ -1560,12 +1561,22 @@ void req_completion(void *request) {
                     free(origin_ucx_iov);
                 }
             
+                if (req->acc.acc_type == GET_ACCUMULATE) {
+                    /* Do fence to make sure target results are received before
+                     * writing into target */
+                    ret = opal_common_ucx_wpmem_fence(req->acc.module->mem);
+                    if (ret != OMPI_SUCCESS) {
+                        OSC_UCX_ERROR("opal_common_ucx_mem_fence failed: %d", ret);
+                        abort();
+                    }
+                }
+
                 ret = ompi_osc_ucx_put(temp_addr, (int)temp_count, temp_dt,
                         target, target_disp, target_count, target_dt, win);
                 if (ret != OMPI_SUCCESS) {
                     OSC_UCX_ERROR("ompi_osc_ucx_put failed ret= %d\n", ret);
                     free(temp_addr);
-                    return;
+                    abort();
                 }
                 release_lock = true;
                 break;
@@ -1574,7 +1585,7 @@ void req_completion(void *request) {
             default:
             {
                 OSC_UCX_ERROR("accumulate progress failed\n");
-                return;
+                abort();
             }
         }
 
@@ -1588,5 +1599,4 @@ void req_completion(void *request) {
     mca_osc_ucx_component.num_incomplete_req_ops--;
     ompi_request_complete(&(req->super), true);
     assert(mca_osc_ucx_component.num_incomplete_req_ops >= 0);
-    return;
 }
