@@ -126,6 +126,7 @@ typedef struct ompi_osc_ucx_module {
     opal_common_ucx_wpmem_t *mem;
     opal_common_ucx_wpmem_t *state_mem;
 
+    bool skip_sync_check;
     bool noncontig_shared_win;
     size_t *sizes;
     /* in shared windows, shmem_addrs can be used for direct load store to

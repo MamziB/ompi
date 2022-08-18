@@ -42,6 +42,9 @@ typedef struct ucx_iovec {
 
 static inline int check_sync_state(ompi_osc_ucx_module_t *module, int target,
                                    bool is_req_ops) {
+
+    if (module->skip_sync_check) return OMPI_SUCCESS;
+
     if (is_req_ops == false) {
         if (module->epoch_type.access == NONE_EPOCH) {
             return OMPI_ERR_RMA_SYNC;
@@ -1289,34 +1292,34 @@ static inline int ompi_osc_ucx_acc_rputget(void *stage_addr, int stage_count,
     opal_common_ucx_wpmem_t *mem = module->mem;
     uint64_t remote_addr = (module->state_addrs[target]) + OSC_UCX_STATE_REQ_FLAG_OFFSET;
     ompi_osc_ucx_request_t *ucx_req = NULL;
+    bool sync_check;
     int ret = OMPI_SUCCESS;
 
-    ret = check_sync_state(module, target, false);
-    if (ret != OMPI_SUCCESS) {
-        return ret;
+    if (acc_type != NONE) {
+        CHECK_DYNAMIC_WIN(remote_addr, module, target, ret, true);
+
+        OMPI_OSC_UCX_REQUEST_ALLOC(win, ucx_req);
+        assert(NULL != ucx_req);
+        ucx_req->acc.op = op;
+        ucx_req->acc.acc_type = acc_type;
+        ucx_req->acc.phase = phase;
+        ucx_req->acc.module = module;
+        ucx_req->acc.target = target;
+        ucx_req->acc.lock_acquired = lock_acquired;
+        ucx_req->acc.win = win;
+        ucx_req->acc.origin_addr = origin_addr;
+        ucx_req->acc.origin_count = origin_count;
+        ucx_req->acc.origin_dt = origin_dt;
+        ucx_req->acc.stage_addr = stage_addr;
+        ucx_req->acc.stage_count = stage_count;
+        ucx_req->acc.stage_dt = stage_dt;
+        ucx_req->acc.target = target;
+        ucx_req->acc.target_dt = target_dt;
+        ucx_req->acc.target_disp = target_disp;
+        ucx_req->acc.target_count = target_count;
     }
-
-    CHECK_DYNAMIC_WIN(remote_addr, module, target, ret, true);
-
-    OMPI_OSC_UCX_REQUEST_ALLOC(win, ucx_req);
-    assert(NULL != ucx_req);
-    ucx_req->acc.op = op;
-    ucx_req->acc.acc_type = acc_type;
-    ucx_req->acc.phase = phase;
-    ucx_req->acc.module = module;
-    ucx_req->acc.target = target;
-    ucx_req->acc.lock_acquired = lock_acquired;
-    ucx_req->acc.win = win;
-    ucx_req->acc.origin_addr = origin_addr;
-    ucx_req->acc.origin_count = origin_count;
-    ucx_req->acc.origin_dt = origin_dt;
-    ucx_req->acc.stage_addr = stage_addr;
-    ucx_req->acc.stage_count = stage_count;
-    ucx_req->acc.stage_dt = stage_dt;
-    ucx_req->acc.target = target;
-    ucx_req->acc.target_dt = target_dt;
-    ucx_req->acc.target_disp = target_disp;
-    ucx_req->acc.target_count = target_count;
+    sync_check = module->skip_sync_check;
+    module->skip_sync_check = true; /* we already hold the acc lock, so no need for sync check*/
 
     if (is_put) {
         ret = ompi_osc_ucx_put(origin_addr, origin_count, origin_dt, target, target_disp,
@@ -1329,24 +1332,27 @@ static inline int ompi_osc_ucx_acc_rputget(void *stage_addr, int stage_count,
         return ret;
     }
 
-    mca_osc_ucx_component.num_incomplete_req_ops++;
-    ret = opal_common_ucx_wpmem_flush_ep_nb(mem, target, req_completion, ucx_req, ep);
+    module->skip_sync_check = sync_check;
+    if (acc_type != NONE) {
+        mca_osc_ucx_component.num_incomplete_req_ops++;
+        ret = opal_common_ucx_wpmem_flush_ep_nb(mem, target, req_completion, ucx_req, ep);
 
-    if (ret != OMPI_SUCCESS) {
-        /* fallback to using an atomic op to acquire a request handle */
-        ret = opal_common_ucx_wpmem_fence(mem);
         if (ret != OMPI_SUCCESS) {
-            OSC_UCX_VERBOSE(1, "opal_common_ucx_mem_fence failed: %d", ret);
-            return OMPI_ERROR;
-        }
+            /* fallback to using an atomic op to acquire a request handle */
+            ret = opal_common_ucx_wpmem_fence(mem);
+            if (ret != OMPI_SUCCESS) {
+                OSC_UCX_VERBOSE(1, "opal_common_ucx_mem_fence failed: %d", ret);
+                return OMPI_ERROR;
+            }
 
-        ret = opal_common_ucx_wpmem_fetch_nb(mem, UCP_ATOMIC_FETCH_OP_FADD,
-                                            0, target, &(module->req_result),
-                                            sizeof(uint64_t), remote_addr & (~0x7),
-                                            req_completion, ucx_req, ep);
-        if (ret != OMPI_SUCCESS) {
-            OMPI_OSC_UCX_REQUEST_RETURN(ucx_req);
-            return ret;
+            ret = opal_common_ucx_wpmem_fetch_nb(mem, UCP_ATOMIC_FETCH_OP_FADD,
+                                                0, target, &(module->req_result),
+                                                sizeof(uint64_t), remote_addr & (~0x7),
+                                                req_completion, ucx_req, ep);
+            if (ret != OMPI_SUCCESS) {
+                OMPI_OSC_UCX_REQUEST_RETURN(ucx_req);
+                return ret;
+            }
         }
     }
 
@@ -1483,11 +1489,11 @@ void req_completion(void *request) {
                 } else if (op == &ompi_mpi_op_replace.op) {
                     /* Now that we have the results data, replace the target
                      * buffer with origin buffer and then release the lock  */
-                    ret = ompi_osc_ucx_put(origin_addr, origin_count,
-                            origin_dt, target, target_disp, target_count,
-                            target_dt, win);
+                    ret = ompi_osc_ucx_acc_rputget(NULL, 0, NULL, target, target_disp,
+                            target_count, target_dt, op, win, 0, origin_addr, origin_count,
+                            origin_dt, true, -1, NONE);
                     if (ret != OMPI_SUCCESS) {
-                        OSC_UCX_ERROR("ompi_osc_ucx_put failed ret= %d\n", ret);
+                        OSC_UCX_ERROR("ompi_osc_ucx_acc_rputget failed ret= %d\n", ret);
                         free(temp_addr);
                         abort();
                     }
@@ -1571,10 +1577,11 @@ void req_completion(void *request) {
                     }
                 }
 
-                ret = ompi_osc_ucx_put(temp_addr, (int)temp_count, temp_dt,
-                        target, target_disp, target_count, target_dt, win);
+                ret = ompi_osc_ucx_acc_rputget(NULL, 0, NULL, target, target_disp,
+                        target_count, target_dt, op, win, 0, temp_addr, temp_count,
+                        temp_dt, true, -1, NONE);
                 if (ret != OMPI_SUCCESS) {
-                    OSC_UCX_ERROR("ompi_osc_ucx_put failed ret= %d\n", ret);
+                    OSC_UCX_ERROR("ompi_osc_ucx_acc_rputget failed ret= %d\n", ret);
                     free(temp_addr);
                     abort();
                 }

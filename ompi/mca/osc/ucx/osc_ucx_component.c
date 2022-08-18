@@ -540,6 +540,7 @@ select_unlock:
     module->size = size;
     module->no_locks = check_config_value_bool ("no_locks", info);
     module->acc_single_intrinsic = check_config_value_bool ("acc_single_intrinsic", info);
+    module->skip_sync_check = false;
 
     /* share everyone's displacement units. Only do an allgather if
        strictly necessary, since it requires O(p) state. */
