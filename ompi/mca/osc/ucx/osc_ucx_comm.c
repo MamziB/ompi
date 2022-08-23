@@ -245,6 +245,11 @@ static inline int ddt_put_get(ompi_osc_ucx_module_t *module,
     }
 
 cleanup:
+    ret = opal_common_ucx_ctx_flush(module->ctx, OPAL_COMMON_UCX_SCOPE_EP, target);
+    if (ret != OPAL_SUCCESS) {
+        ret = OMPI_ERROR;
+        goto cleanup;
+    }
 
     if (origin_ucx_iov != NULL) {
         free(origin_ucx_iov);
@@ -274,7 +279,7 @@ static inline int get_dynamic_win_info(uint64_t remote_addr, ompi_osc_ucx_module
         /* We need to lock acc-lock even if the process has an exclusive lock.
          * Therefore, force lock is needed. Remote process protects its window
          * attach/detach operations with an acc-lock */
-        ret = ompi_osc_state_lock(module, target, &lock_acquired, true);
+        ret = ompi_osc_ucx_state_lock(module, target, &lock_acquired, true);
         if (ret != OMPI_SUCCESS) {
             return ret;
         }
@@ -359,7 +364,7 @@ static inline int get_dynamic_win_info(uint64_t remote_addr, ompi_osc_ucx_module
 cleanup:
     free(temp_buf);
 
-    ompi_osc_state_unlock(module, target, lock_acquired, NULL);
+    ompi_osc_ucx_state_unlock(module, target, lock_acquired, NULL);
 
     return ret;
 }
@@ -626,7 +631,7 @@ int accumulate_req(const void *origin_addr, int origin_count,
     }
 
     /* Start atomicity by acquiring acc lock  */
-    ret = ompi_osc_state_lock(module, target, &lock_acquired, false);
+    ret = ompi_osc_ucx_state_lock(module, target, &lock_acquired, false);
     if (ret != OMPI_SUCCESS) {
         return ret;
     }
@@ -739,7 +744,7 @@ int accumulate_req(const void *origin_addr, int origin_count,
         ompi_request_complete(&ucx_req->super, true);
     }
 
-    return ompi_osc_state_unlock(module, target, lock_acquired, free_ptr);
+    return ompi_osc_ucx_state_unlock(module, target, lock_acquired, free_ptr);
 }
 
 int ompi_osc_ucx_accumulate(const void *origin_addr, int origin_count,
@@ -777,7 +782,7 @@ do_atomic_compare_and_swap(const void *origin_addr, const void *compare_addr,
     OSC_UCX_GET_DEFAULT_EP(ep, module->comm, target);
     if (!module->acc_single_intrinsic) {
         /* Start atomicity by acquiring acc lock  */
-        ret = ompi_osc_state_lock(module, target, &lock_acquired, false);
+        ret = ompi_osc_ucx_state_lock(module, target, &lock_acquired, false);
         if (ret != OMPI_SUCCESS) {
             return ret;
         }
@@ -796,7 +801,7 @@ do_atomic_compare_and_swap(const void *origin_addr, const void *compare_addr,
         return ret;
     }
 
-    return ompi_osc_state_unlock(module, target, lock_acquired, NULL);
+    return ompi_osc_ucx_state_unlock(module, target, lock_acquired, NULL);
 }
 
 int ompi_osc_ucx_compare_and_swap(const void *origin_addr, const void *compare_addr,
@@ -828,7 +833,7 @@ int ompi_osc_ucx_compare_and_swap(const void *origin_addr, const void *compare_a
     /* fall back to get-compare-put */
 
     /* Start atomicity by acquiring acc lock  */
-    ret = ompi_osc_state_lock(module, target, &lock_acquired, false);
+    ret = ompi_osc_ucx_state_lock(module, target, &lock_acquired, false);
     if (ret != OMPI_SUCCESS) {
         return ret;
     }
@@ -857,7 +862,7 @@ int ompi_osc_ucx_compare_and_swap(const void *origin_addr, const void *compare_a
         }
     }
 
-    return ompi_osc_state_unlock(module, target, lock_acquired, NULL);
+    return ompi_osc_ucx_state_unlock(module, target, lock_acquired, NULL);
 }
 
 int ompi_osc_ucx_fetch_and_op(const void *origin_addr, void *result_addr,
@@ -886,7 +891,7 @@ int ompi_osc_ucx_fetch_and_op(const void *origin_addr, void *result_addr,
 
         if (!module->acc_single_intrinsic) {
             /* Start atomicity by acquiring acc lock  */
-            ret = ompi_osc_state_lock(module, target, &lock_acquired, false);
+            ret = ompi_osc_ucx_state_lock(module, target, &lock_acquired, false);
             if (ret != OMPI_SUCCESS) {
                 return ret;
             }
@@ -913,7 +918,7 @@ int ompi_osc_ucx_fetch_and_op(const void *origin_addr, void *result_addr,
             return ret;
         }
 
-        return ompi_osc_state_unlock(module, target, lock_acquired, NULL);
+        return ompi_osc_ucx_state_unlock(module, target, lock_acquired, NULL);
     } else {
         return ompi_osc_ucx_get_accumulate(origin_addr, 1, dt, result_addr, 1, dt,
                                            target, target_disp, 1, dt, op, win);
@@ -950,7 +955,7 @@ int get_accumulate_req(const void *origin_addr, int origin_count,
     }
 
     /* Start atomicity by acquiring acc lock  */
-    ret = ompi_osc_state_lock(module, target, &lock_acquired, false);
+    ret = ompi_osc_ucx_state_lock(module, target, &lock_acquired, false);
     if (ret != OMPI_SUCCESS) {
         return ret;
     }
@@ -1072,7 +1077,7 @@ int get_accumulate_req(const void *origin_addr, int origin_count,
     }
 
 
-    return ompi_osc_state_unlock(module, target, lock_acquired, free_addr);
+    return ompi_osc_ucx_state_unlock(module, target, lock_acquired, free_addr);
 }
 
 int ompi_osc_ucx_get_accumulate(const void *origin_addr, int origin_count,
@@ -1394,9 +1399,17 @@ static int ompi_osc_ucx_get_accumulate_nonblocking(const void *origin_addr, int 
     }
 
     /* Start atomicity by acquiring acc lock  */
-    ret = ompi_osc_state_lock(module, target, &lock_acquired, false);
+    ret = ompi_osc_ucx_state_lock(module, target, &lock_acquired, false);
     if (ret != OMPI_SUCCESS) {
         return ret;
+    }
+
+    if (mca_osc_ucx_component.num_incomplete_req_ops > OSC_UCX_OUTSTANDING_OPS_FLUSH_THRESHOLD) {
+        ret = opal_common_ucx_ctx_flush(module->ctx, OPAL_COMMON_UCX_SCOPE_WORKER, 0);
+        if (ret != OPAL_SUCCESS) {
+            ret = OMPI_ERROR;
+            return ret;
+        } 
     }
 
     CHECK_DYNAMIC_WIN(remote_addr, module, target, ret, !lock_acquired);
@@ -1599,7 +1612,7 @@ void req_completion(void *request) {
         if (release_lock) {
             /* Ordering between previous put/get operations and unlock will be realized
              * through the ucp fence inside the state unlock function */
-            ompi_osc_state_unlock_nb(req->acc.module, target, req->acc.lock_acquired, win);
+            ompi_osc_ucx_state_unlock_nb(req->acc.module, target, req->acc.lock_acquired, win);
         }
     }
 

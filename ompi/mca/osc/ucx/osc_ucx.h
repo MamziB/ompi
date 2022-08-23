@@ -161,6 +161,8 @@ extern bool mpi_thread_multiple_enabled;
         _ep_ptr = (ucp_ep_h *)&(OSC_UCX_GET_EP(_comm, _target));        \
     }
 
+#define OSC_UCX_OUTSTANDING_OPS_FLUSH_THRESHOLD 64
+
 int ompi_osc_ucx_shared_query(struct ompi_win_t *win, int rank, size_t *size,
         int *disp_unit, void * baseptr);
 int ompi_osc_ucx_win_attach(struct ompi_win_t *win, void *base, size_t len);
@@ -252,11 +254,11 @@ int ompi_osc_find_attached_region_position(ompi_osc_dynamic_win_info_t *dynamic_
                                            int min_index, int max_index,
                                            uint64_t base, size_t len, int *insert);
 extern inline bool ompi_osc_need_acc_lock(ompi_osc_ucx_module_t *module, int target);
-extern inline int ompi_osc_state_lock(ompi_osc_ucx_module_t *module, int target,
+extern inline int ompi_osc_ucx_state_lock(ompi_osc_ucx_module_t *module, int target,
         bool *lock_acquired, bool force_lock);
-extern inline int ompi_osc_state_unlock(ompi_osc_ucx_module_t *module, int target,
+extern inline int ompi_osc_ucx_state_unlock(ompi_osc_ucx_module_t *module, int target,
         bool lock_acquired, void *free_ptr);
-extern inline int ompi_osc_state_unlock_nb(ompi_osc_ucx_module_t *module, int target,
+extern inline int ompi_osc_ucx_state_unlock_nb(ompi_osc_ucx_module_t *module, int target,
         bool lock_acquired, struct ompi_win_t *win);
 
 #endif /* OMPI_OSC_UCX_H */

@@ -874,7 +874,7 @@ inline bool ompi_osc_need_acc_lock(ompi_osc_ucx_module_t *module, int target)
     return !(NULL != lock && LOCK_EXCLUSIVE == lock->type);
 }
 
-inline int ompi_osc_state_lock(
+inline int ompi_osc_ucx_state_lock(
     ompi_osc_ucx_module_t *module,
     int                    target,
     bool                  *lock_acquired,
@@ -910,7 +910,7 @@ inline int ompi_osc_state_lock(
     return OMPI_SUCCESS;
 }
 
-inline int ompi_osc_state_unlock(
+inline int ompi_osc_ucx_state_unlock(
     ompi_osc_ucx_module_t *module,
     int                    target,
     bool                   lock_acquired,
@@ -950,7 +950,7 @@ inline int ompi_osc_state_unlock(
     return ret;
 }
 
-inline int ompi_osc_state_unlock_nb(
+inline int ompi_osc_ucx_state_unlock_nb(
     ompi_osc_ucx_module_t *module,
     int                    target,
     bool                   lock_acquired,
@@ -1001,7 +1001,7 @@ int ompi_osc_ucx_win_attach(struct ompi_win_t *win, void *base, size_t len) {
     }
 
     bool lock_acquired = false;
-    ret = ompi_osc_state_lock(module, ompi_comm_rank(module->comm), &lock_acquired, true);
+    ret = ompi_osc_ucx_state_lock(module, ompi_comm_rank(module->comm), &lock_acquired, true);
     if (ret != OMPI_SUCCESS) {
         return ret;
     }
@@ -1012,7 +1012,7 @@ int ompi_osc_ucx_win_attach(struct ompi_win_t *win, void *base, size_t len) {
                                                                (uint64_t)base, len, &insert_index);
         if (contain_index >= 0) {
             module->local_dynamic_win_info[contain_index].refcnt++;
-            ompi_osc_state_unlock(module, ompi_comm_rank(module->comm), lock_acquired, NULL);
+            ompi_osc_ucx_state_unlock(module, ompi_comm_rank(module->comm), lock_acquired, NULL);
             return ret;
         }
 
@@ -1036,7 +1036,7 @@ int ompi_osc_ucx_win_attach(struct ompi_win_t *win, void *base, size_t len) {
                                        &(module->local_dynamic_win_info[insert_index].my_mem_addr_size),
                                        &(module->local_dynamic_win_info[insert_index].mem));
     if (ret != OMPI_SUCCESS) {
-        ompi_osc_state_unlock(module, ompi_comm_rank(module->comm), lock_acquired, NULL);
+        ompi_osc_ucx_state_unlock(module, ompi_comm_rank(module->comm), lock_acquired, NULL);
         return ret;
     }
 
@@ -1050,7 +1050,7 @@ int ompi_osc_ucx_win_attach(struct ompi_win_t *win, void *base, size_t len) {
     module->local_dynamic_win_info[insert_index].refcnt++;
     module->state.dynamic_win_count++;
 
-    return ompi_osc_state_unlock(module, ompi_comm_rank(module->comm), lock_acquired, NULL);
+    return ompi_osc_ucx_state_unlock(module, ompi_comm_rank(module->comm), lock_acquired, NULL);
 }
 
 int ompi_osc_ucx_win_detach(struct ompi_win_t *win, const void *base) {
@@ -1058,7 +1058,7 @@ int ompi_osc_ucx_win_detach(struct ompi_win_t *win, const void *base) {
     int insert, contain;
 
     bool lock_acquired = false;
-    int ret = ompi_osc_state_lock(module, ompi_comm_rank(module->comm), &lock_acquired, true);
+    int ret = ompi_osc_ucx_state_lock(module, ompi_comm_rank(module->comm), &lock_acquired, true);
     if (ret != OMPI_SUCCESS) {
         return ret;
     }
@@ -1072,7 +1072,7 @@ int ompi_osc_ucx_win_detach(struct ompi_win_t *win, const void *base) {
 
     /* if we can't find region - just exit */
     if (contain < 0) {
-        return ompi_osc_state_unlock(module, ompi_comm_rank(module->comm), lock_acquired, NULL);
+        return ompi_osc_ucx_state_unlock(module, ompi_comm_rank(module->comm), lock_acquired, NULL);
     }
 
     module->local_dynamic_win_info[contain].refcnt--;
@@ -1088,7 +1088,7 @@ int ompi_osc_ucx_win_detach(struct ompi_win_t *win, const void *base) {
         module->state.dynamic_win_count--;
     }
 
-    return ompi_osc_state_unlock(module, ompi_comm_rank(module->comm), lock_acquired, NULL);
+    return ompi_osc_ucx_state_unlock(module, ompi_comm_rank(module->comm), lock_acquired, NULL);
 
 }
 
