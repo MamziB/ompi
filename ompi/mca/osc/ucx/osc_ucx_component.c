@@ -187,6 +187,9 @@ static int component_register(void) {
     (void) mca_base_component_var_register(&mca_osc_ucx_component.super.osc_version, "enable_wpool_thread_multiple",
                                            description_str, MCA_BASE_VAR_TYPE_BOOL, NULL, 0, 0, OPAL_INFO_LVL_5,
                                            MCA_BASE_VAR_SCOPE_GROUP, &mpi_thread_multiple_enabled);
+    (void) mca_base_component_var_register(&mca_osc_ucx_component.super.osc_version, "outstanding_ops_flush_threshold",
+                                           description_str, MCA_BASE_VAR_TYPE_INT, NULL, 0, 0, OPAL_INFO_LVL_5,
+                                           MCA_BASE_VAR_SCOPE_GROUP, &outstanding_ops_flush_threshold);
     free(description_str);
 
     opal_common_ucx_mca_var_register(&mca_osc_ucx_component.super.osc_version);

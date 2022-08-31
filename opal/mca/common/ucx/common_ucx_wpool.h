@@ -106,6 +106,7 @@ typedef struct {
     char *mem_addrs;
     int *mem_displs;
     void *comm;
+    bool skip_periodic_flush;
 
     /* TLS item that allows each thread to
      * store endpoints and rkey arrays
@@ -310,6 +311,8 @@ static inline int _periodical_flush_nb(opal_common_ucx_wpmem_t *mem, opal_common
                                        int target)
 {
     int rc = OPAL_SUCCESS;
+
+    if (mem->skip_periodic_flush) return OPAL_SUCCESS;
 
     if (OPAL_UNLIKELY(winfo->inflight_ops[target] >= MCA_COMMON_UCX_PER_TARGET_OPS_THRESHOLD)
         || OPAL_UNLIKELY(winfo->global_inflight_ops >= MCA_COMMON_UCX_GLOBAL_OPS_THRESHOLD)) {

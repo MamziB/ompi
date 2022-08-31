@@ -413,6 +413,7 @@ int opal_common_ucx_wpmem_create(opal_common_ucx_ctx_t *ctx, void **mem_base, si
     mem->ctx = ctx;
     mem->mem_addrs = NULL;
     mem->mem_displs = NULL;
+    mem->skip_periodic_flush = false;
 
     OBJ_CONSTRUCT(&mem->mutex, opal_mutex_t);
 
