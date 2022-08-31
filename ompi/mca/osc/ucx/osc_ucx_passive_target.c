@@ -163,7 +163,8 @@ int ompi_osc_ucx_unlock(int target, struct ompi_win_t *win) {
         return OMPI_ERR_RMA_SYNC;
     }
 
-    ret = opal_common_ucx_ctx_flush(module->ctx, OPAL_COMMON_UCX_SCOPE_WORKER, 0);
+    ret = opal_common_ucx_ctx_flush(module->ctx, OPAL_COMMON_UCX_SCOPE_WORKER,
+            &mca_osc_ucx_component.num_incomplete_req_ops, 0);
     if (ret != OMPI_SUCCESS) {
         return ret;
     }
@@ -236,7 +237,8 @@ int ompi_osc_ucx_unlock_all(struct ompi_win_t *win) {
 
     assert(module->lock_count == 0);
  
-    ret = opal_common_ucx_ctx_flush(module->ctx, OPAL_COMMON_UCX_SCOPE_WORKER, 0);
+    ret = opal_common_ucx_ctx_flush(module->ctx, OPAL_COMMON_UCX_SCOPE_WORKER,
+            &mca_osc_ucx_component.num_incomplete_req_ops, 0);
     if (ret != OMPI_SUCCESS) {
         return ret;
     }
@@ -281,7 +283,8 @@ int ompi_osc_ucx_flush(int target, struct ompi_win_t *win) {
         return OMPI_ERR_RMA_SYNC;
     }
 
-    ret = opal_common_ucx_ctx_flush(module->ctx, OPAL_COMMON_UCX_SCOPE_EP, target);
+    ret = opal_common_ucx_ctx_flush(module->ctx, OPAL_COMMON_UCX_SCOPE_EP,
+            &mca_osc_ucx_component.num_incomplete_req_ops, target);
     if (ret != OMPI_SUCCESS) {
         return ret;
     }
@@ -298,7 +301,8 @@ int ompi_osc_ucx_flush_all(struct ompi_win_t *win) {
         return OMPI_ERR_RMA_SYNC;
     }
 
-    ret = opal_common_ucx_ctx_flush(module->ctx, OPAL_COMMON_UCX_SCOPE_WORKER, 0);
+    ret = opal_common_ucx_ctx_flush(module->ctx, OPAL_COMMON_UCX_SCOPE_WORKER,
+            &mca_osc_ucx_component.num_incomplete_req_ops, 0);
     if (ret != OMPI_SUCCESS) {
         return ret;
     }

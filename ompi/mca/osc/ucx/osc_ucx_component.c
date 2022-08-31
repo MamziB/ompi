@@ -187,6 +187,9 @@ static int component_register(void) {
     (void) mca_base_component_var_register(&mca_osc_ucx_component.super.osc_version, "enable_wpool_thread_multiple",
                                            description_str, MCA_BASE_VAR_TYPE_BOOL, NULL, 0, 0, OPAL_INFO_LVL_5,
                                            MCA_BASE_VAR_SCOPE_GROUP, &mpi_thread_multiple_enabled);
+    (void) mca_base_component_var_register(&mca_osc_ucx_component.super.osc_version, "outstanding_ops_flush_threshold",
+                                           description_str, MCA_BASE_VAR_TYPE_INT, NULL, 0, 0, OPAL_INFO_LVL_5,
+                                           MCA_BASE_VAR_SCOPE_GROUP, &outstanding_ops_flush_threshold);
     free(description_str);
 
     opal_common_ucx_mca_var_register(&mca_osc_ucx_component.super.osc_version);
@@ -936,7 +939,8 @@ inline int ompi_osc_ucx_state_unlock(
         assert(result_value == TARGET_LOCK_EXCLUSIVE);
     } else if (NULL != free_ptr){
         /* flush before freeing the buffer */
-        ret = opal_common_ucx_ctx_flush(module->ctx, OPAL_COMMON_UCX_SCOPE_EP, target);
+        ret = opal_common_ucx_ctx_flush(module->ctx, OPAL_COMMON_UCX_SCOPE_EP,
+                &mca_osc_ucx_component.num_incomplete_req_ops, target);
     }
     /* TODO: encapsulate in a request and make the release non-blocking */
     if (NULL != free_ptr) {
@@ -950,29 +954,29 @@ inline int ompi_osc_ucx_state_unlock(
     return ret;
 }
 
-inline int ompi_osc_ucx_state_unlock_nb(
-    ompi_osc_ucx_module_t *module,
-    int                    target,
-    bool                   lock_acquired,
-    struct ompi_win_t *win) {
+inline int ompi_osc_ucx_nonblocking_ops_finalize(ompi_osc_ucx_module_t *module, int
+                target, bool lock_acquired, struct ompi_win_t *win, void *free_ptr) {
     uint64_t remote_addr = (module->state_addrs)[target] + OSC_UCX_STATE_ACC_LOCK_OFFSET;
     ucp_ep_h *ep;
     OSC_UCX_GET_DEFAULT_EP(ep, module->comm, target);
     int ret = OMPI_SUCCESS;
     ompi_osc_ucx_request_t *ucx_req = NULL;
 
+    OMPI_OSC_UCX_REQUEST_ALLOC(win, ucx_req);
+    assert(NULL != ucx_req);
+    ucx_req->acc.free_ptr = free_ptr;
+    ucx_req->acc.phase = ACC_FINALIZE;
+    ucx_req->acc.acc_type = ANY;
+
+    /* Fence any still active operations */
+    ret = opal_common_ucx_wpmem_fence(module->mem);
+    if (ret != OMPI_SUCCESS) {
+        OSC_UCX_VERBOSE(1, "opal_common_ucx_mem_fence failed: %d", ret);
+        return OMPI_ERROR;
+    }
+
     if (lock_acquired) {
-        /* fence any still active operations */
-        ret = opal_common_ucx_wpmem_fence(module->mem);
-        if (ret != OMPI_SUCCESS) {
-            OSC_UCX_VERBOSE(1, "opal_common_ucx_mem_fence failed: %d", ret);
-            return OMPI_ERROR;
-        }
-
-        OMPI_OSC_UCX_REQUEST_ALLOC(win, ucx_req);
-        assert(NULL != ucx_req);
-
-        mca_osc_ucx_component.num_incomplete_req_ops++;
+        INCREMENT_OUTSTANDING_NB_OPS;
         ret = opal_common_ucx_wpmem_fetch_nb(module->state_mem,
                                         UCP_ATOMIC_FETCH_OP_SWAP, TARGET_LOCK_UNLOCKED,
                                         target, &(module->req_result), sizeof(module->req_result),
@@ -981,6 +985,23 @@ inline int ompi_osc_ucx_state_unlock_nb(
             OSC_UCX_VERBOSE(1, "opal_common_ucx_wpmem_fetch_nb failed: %d", ret);
             OMPI_OSC_UCX_REQUEST_RETURN(ucx_req);
             return ret;
+        }
+    } else {
+        /* Lock is not acquired, but still, we need to know when the 
+         * acc is finalized so that we can free the temp buffers */
+        INCREMENT_OUTSTANDING_NB_OPS;
+        ret = opal_common_ucx_wpmem_flush_ep_nb(module->mem, target, req_completion, ucx_req, ep);
+
+        if (ret != OMPI_SUCCESS) {
+            /* fallback to using an atomic op to acquire a request handle */
+            ret = opal_common_ucx_wpmem_fetch_nb(module->mem, UCP_ATOMIC_FETCH_OP_FADD,
+                                                0, target, &(module->req_result),
+                                                sizeof(uint64_t), remote_addr & (~0x7),
+                                                req_completion, ucx_req, ep);
+            if (ret != OMPI_SUCCESS) {
+                OMPI_OSC_UCX_REQUEST_RETURN(ucx_req);
+                return ret;
+            }
         }
     }
 
@@ -1104,7 +1125,8 @@ int ompi_osc_ucx_free(struct ompi_win_t *win) {
     }
     OBJ_DESTRUCT(&module->pending_posts);
 
-    opal_common_ucx_ctx_flush(module->ctx, OPAL_COMMON_UCX_SCOPE_WORKER, 0);
+    opal_common_ucx_ctx_flush(module->ctx, OPAL_COMMON_UCX_SCOPE_WORKER,
+            &mca_osc_ucx_component.num_incomplete_req_ops, 0);
 
     ret = module->comm->c_coll->coll_barrier(module->comm,
                                              module->comm->c_coll->coll_barrier_module);

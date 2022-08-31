@@ -413,6 +413,7 @@ int opal_common_ucx_wpmem_create(opal_common_ucx_ctx_t *ctx, void **mem_base, si
     mem->ctx = ctx;
     mem->mem_addrs = NULL;
     mem->mem_displs = NULL;
+    mem->skip_periodic_flush = false;
 
     OBJ_CONSTRUCT(&mem->mutex, opal_mutex_t);
 
@@ -806,8 +807,8 @@ OPAL_DECLSPEC int opal_common_ucx_winfo_flush(opal_common_ucx_winfo_t *winfo, in
     return rc;
 }
 
-OPAL_DECLSPEC int opal_common_ucx_ctx_flush(opal_common_ucx_ctx_t *ctx,
-                                              opal_common_ucx_flush_scope_t scope, int target)
+static inline int ctx_flush(opal_common_ucx_ctx_t *ctx,
+                                opal_common_ucx_flush_scope_t scope, int target)
 {
     _ctx_record_t *ctx_rec;
     int rc = OPAL_SUCCESS;
@@ -843,7 +844,42 @@ OPAL_DECLSPEC int opal_common_ucx_ctx_flush(opal_common_ucx_ctx_t *ctx,
             break;
         }
     }
+
     opal_mutex_unlock(&ctx->mutex);
+
+    return rc;
+}
+
+OPAL_DECLSPEC int opal_common_ucx_ctx_flush(opal_common_ucx_ctx_t *ctx,
+                                              opal_common_ucx_flush_scope_t scope,
+                                              int *nonblocking_reqs_cnt, int target)
+{
+    int rc = OPAL_SUCCESS;
+
+    if (NULL == ctx) {
+        return OPAL_SUCCESS;
+    }
+
+    rc = ctx_flush(ctx, scope, target);
+    if (rc != OPAL_SUCCESS) {
+        return rc;
+    }
+
+    /* progress the nonblocking operations */
+    if (nonblocking_reqs_cnt != NULL) {
+        int spin = 0;
+        while (*nonblocking_reqs_cnt != 0) {
+            spin++;
+            rc = ctx_flush(ctx, OPAL_COMMON_UCX_SCOPE_WORKER, 0);
+            if (rc != OPAL_SUCCESS) {
+                return rc;
+            }
+            if (spin == opal_common_ucx.progress_iterations) {
+                opal_progress();
+                spin = 0;
+            }
+        }
+    }
 
     return rc;
 }
@@ -890,7 +926,7 @@ OPAL_DECLSPEC int opal_common_ucx_wpmem_flush_ep_nb(opal_common_ucx_wpmem_t *mem
 
 }
 
-
+/* TODO Replace the input with opal_common_ucx_ctx_t */
 OPAL_DECLSPEC int opal_common_ucx_wpmem_fence(opal_common_ucx_wpmem_t *mem)
 {
     ucs_status_t status = UCS_OK;

@@ -45,6 +45,16 @@ typedef struct ompi_osc_ucx_component {
 
 OMPI_DECLSPEC extern ompi_osc_ucx_component_t mca_osc_ucx_component;
 
+#define INCREMENT_OUTSTANDING_NB_OPS                                \
+    do {                                                            \
+        mca_osc_ucx_component.num_incomplete_req_ops++;             \
+    } while(0);
+
+#define DECREMENT_OUTSTANDING_NB_OPS                                \
+    do {                                                            \
+        mca_osc_ucx_component.num_incomplete_req_ops--;             \
+    } while(0);
+
 typedef enum ompi_osc_ucx_epoch {
     NONE_EPOCH,
     FENCE_EPOCH,
@@ -161,7 +171,7 @@ extern bool mpi_thread_multiple_enabled;
         _ep_ptr = (ucp_ep_h *)&(OSC_UCX_GET_EP(_comm, _target));        \
     }
 
-#define OSC_UCX_OUTSTANDING_OPS_FLUSH_THRESHOLD 64
+extern int outstanding_ops_flush_threshold;
 
 int ompi_osc_ucx_shared_query(struct ompi_win_t *win, int rank, size_t *size,
         int *disp_unit, void * baseptr);
@@ -258,7 +268,7 @@ extern inline int ompi_osc_ucx_state_lock(ompi_osc_ucx_module_t *module, int tar
         bool *lock_acquired, bool force_lock);
 extern inline int ompi_osc_ucx_state_unlock(ompi_osc_ucx_module_t *module, int target,
         bool lock_acquired, void *free_ptr);
-extern inline int ompi_osc_ucx_state_unlock_nb(ompi_osc_ucx_module_t *module, int target,
-        bool lock_acquired, struct ompi_win_t *win);
+extern inline int ompi_osc_ucx_nonblocking_ops_finalize(ompi_osc_ucx_module_t *module, int target,
+        bool lock_acquired, struct ompi_win_t *win, void *free_ptr);
 
 #endif /* OMPI_OSC_UCX_H */

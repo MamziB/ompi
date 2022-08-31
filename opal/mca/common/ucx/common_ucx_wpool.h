@@ -106,6 +106,7 @@ typedef struct {
     char *mem_addrs;
     int *mem_displs;
     void *comm;
+    bool skip_periodic_flush;
 
     /* TLS item that allows each thread to
      * store endpoints and rkey arrays
@@ -248,7 +249,8 @@ OPAL_DECLSPEC int opal_common_ucx_wpmem_create(opal_common_ucx_ctx_t *ctx, void 
 OPAL_DECLSPEC void opal_common_ucx_wpmem_free(opal_common_ucx_wpmem_t *mem);
 
 OPAL_DECLSPEC int opal_common_ucx_ctx_flush(opal_common_ucx_ctx_t *ctx,
-                                              opal_common_ucx_flush_scope_t scope, int target);
+                                              opal_common_ucx_flush_scope_t scope,
+                                              int *nonblocking_reqs_cnt, int target);
 OPAL_DECLSPEC int opal_common_ucx_wpmem_flush_ep_nb(opal_common_ucx_wpmem_t *mem,
                                                     int target,
                                                     opal_common_ucx_user_req_handler_t user_req_cb,
@@ -310,6 +312,8 @@ static inline int _periodical_flush_nb(opal_common_ucx_wpmem_t *mem, opal_common
                                        int target)
 {
     int rc = OPAL_SUCCESS;
+
+    if (mem->skip_periodic_flush) return OPAL_SUCCESS;
 
     if (OPAL_UNLIKELY(winfo->inflight_ops[target] >= MCA_COMMON_UCX_PER_TARGET_OPS_THRESHOLD)
         || OPAL_UNLIKELY(winfo->global_inflight_ops >= MCA_COMMON_UCX_GLOBAL_OPS_THRESHOLD)) {
