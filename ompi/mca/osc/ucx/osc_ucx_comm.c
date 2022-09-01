@@ -1304,12 +1304,18 @@ static inline int ompi_osc_ucx_acc_rputget(void *stage_addr, int stage_count,
         ucx_req->acc.win = win;
         ucx_req->acc.origin_addr = origin_addr;
         ucx_req->acc.origin_count = origin_count;
-        ucx_req->acc.origin_dt = origin_dt;
+        if (origin_dt != NULL) {
+            MPI_Type_dup(origin_dt, &ucx_req->acc.origin_dt);
+        }
         ucx_req->acc.stage_addr = stage_addr;
         ucx_req->acc.stage_count = stage_count;
-        ucx_req->acc.stage_dt = stage_dt;
+        if (stage_dt != NULL) {
+            MPI_Type_dup(stage_dt, &ucx_req->acc.stage_dt);
+        }
         ucx_req->acc.target = target;
-        ucx_req->acc.target_dt = target_dt;
+        if (target_dt != NULL) {
+            MPI_Type_dup(target_dt, &ucx_req->acc.target_dt);
+        }
         ucx_req->acc.target_disp = target_disp;
         ucx_req->acc.target_count = target_count;
     }
@@ -1492,6 +1498,7 @@ void req_completion(void *request) {
                      * acc lock and return */
                     release_lock = true;
                 } else if (op == &ompi_mpi_op_replace.op) {
+                    assert(target_dt != NULL && origin_dt != NULL);
                     /* Now that we have the results data, replace the target
                      * buffer with origin buffer and then release the lock  */
                     ret = ompi_osc_ucx_acc_rputget(NULL, 0, NULL, target, target_disp,
@@ -1518,6 +1525,7 @@ void req_completion(void *request) {
             case ACC_GET_STAGE_DATA:
             {
                 assert(op != &ompi_mpi_op_replace.op && op != &ompi_mpi_op_no_op.op);
+                assert(origin_dt != NULL && temp_dt != NULL);
 
                 bool is_origin_contig =
                     ompi_datatype_is_contiguous_memory_layout(origin_dt, origin_count);
@@ -1605,6 +1613,15 @@ void req_completion(void *request) {
             /* Ordering between previous put/get operations and unlock will be realized
              * through the ucp fence inside the state unlock function */
             ompi_osc_ucx_state_unlock_nb(req->acc.module, target, req->acc.lock_acquired, win);
+            if (origin_dt != NULL) {
+                ompi_datatype_destroy(&origin_dt);
+            }
+            if (target_dt != NULL) {
+                ompi_datatype_destroy(&target_dt);
+            }
+            if (temp_dt != NULL) {
+                ompi_datatype_destroy(&temp_dt);
+            }
         }
 
         req->acc.module->mem->skip_periodic_flush = false;
