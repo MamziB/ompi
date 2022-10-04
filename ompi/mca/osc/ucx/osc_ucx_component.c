@@ -953,28 +953,28 @@ inline int ompi_osc_ucx_state_unlock(
     return ret;
 }
 
-inline int ompi_osc_ucx_state_unlock_nb(
-    ompi_osc_ucx_module_t *module,
-    int                    target,
-    bool                   lock_acquired,
-    struct ompi_win_t *win) {
+inline int ompi_osc_ucx_state_unlock_nb( ompi_osc_ucx_module_t *module, int
+                target, bool lock_acquired, struct ompi_win_t *win, void *free_ptr) {
     uint64_t remote_addr = (module->state_addrs)[target] + OSC_UCX_STATE_ACC_LOCK_OFFSET;
     ucp_ep_h *ep;
     OSC_UCX_GET_DEFAULT_EP(ep, module->comm, target);
     int ret = OMPI_SUCCESS;
     ompi_osc_ucx_request_t *ucx_req = NULL;
 
+    OMPI_OSC_UCX_REQUEST_ALLOC(win, ucx_req);
+    assert(NULL != ucx_req);
+    ucx_req->acc.free_ptr = free_ptr;
+    ucx_req->acc.phase = ACC_FINALIZE;
+    ucx_req->acc.acc_type = ANY;
+
+    /* Fence any still active operations */
+    ret = opal_common_ucx_wpmem_fence(module->mem);
+    if (ret != OMPI_SUCCESS) {
+        OSC_UCX_VERBOSE(1, "opal_common_ucx_mem_fence failed: %d", ret);
+        return OMPI_ERROR;
+    }
+
     if (lock_acquired) {
-        /* fence any still active operations */
-        ret = opal_common_ucx_wpmem_fence(module->mem);
-        if (ret != OMPI_SUCCESS) {
-            OSC_UCX_VERBOSE(1, "opal_common_ucx_mem_fence failed: %d", ret);
-            return OMPI_ERROR;
-        }
-
-        OMPI_OSC_UCX_REQUEST_ALLOC(win, ucx_req);
-        assert(NULL != ucx_req);
-
         mca_osc_ucx_component.num_incomplete_req_ops++;
         ret = opal_common_ucx_wpmem_fetch_nb(module->state_mem,
                                         UCP_ATOMIC_FETCH_OP_SWAP, TARGET_LOCK_UNLOCKED,
@@ -984,6 +984,23 @@ inline int ompi_osc_ucx_state_unlock_nb(
             OSC_UCX_VERBOSE(1, "opal_common_ucx_wpmem_fetch_nb failed: %d", ret);
             OMPI_OSC_UCX_REQUEST_RETURN(ucx_req);
             return ret;
+        }
+    } else {
+        /* Lock is not acquired, but still, we need to know when the 
+         * acc is finalized so that we can free the temp buffers */
+        mca_osc_ucx_component.num_incomplete_req_ops++;
+        ret = opal_common_ucx_wpmem_flush_ep_nb(module->mem, target, req_completion, ucx_req, ep);
+
+        if (ret != OMPI_SUCCESS) {
+            /* fallback to using an atomic op to acquire a request handle */
+            ret = opal_common_ucx_wpmem_fetch_nb(module->mem, UCP_ATOMIC_FETCH_OP_FADD,
+                                                0, target, &(module->req_result),
+                                                sizeof(uint64_t), remote_addr & (~0x7),
+                                                req_completion, ucx_req, ep);
+            if (ret != OMPI_SUCCESS) {
+                OMPI_OSC_UCX_REQUEST_RETURN(ucx_req);
+                return ret;
+            }
         }
     }
 

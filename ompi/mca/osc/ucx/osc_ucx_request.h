@@ -20,14 +20,16 @@
 enum acc_rma_type {
     NONE,
     ACCUMULATE,
-    GET_ACCUMULATE
+    GET_ACCUMULATE,
+    ANY
 };
 
 enum acc_phases {
     ACC_INIT,
     ACC_GET_RESULTS_DATA,
     ACC_GET_STAGE_DATA,
-    ACC_PUT_TARGET_DATA
+    ACC_PUT_TARGET_DATA,
+    ACC_FINALIZE
 };
 
 typedef struct ompi_osc_ucx_accumulate_request {
@@ -47,6 +49,7 @@ typedef struct ompi_osc_ucx_accumulate_request {
     struct ompi_datatype_t *target_dt;
     int target_disp;
     int target_count;
+    void *free_ptr;
 } ompi_osc_ucx_accumulate_request_t;
 
 typedef struct ompi_osc_ucx_request {
@@ -89,6 +92,7 @@ OBJ_CLASS_DECLARATION(ompi_osc_ucx_request_t);
         req->acc.target_dt = NULL;                                      \
         req->acc.target_count = 0;                                      \
         req->acc.target_disp = 0;                                       \
+        req->acc.free_ptr = NULL;                                       \
     } while (0)
 
 #define OMPI_OSC_UCX_REQUEST_RETURN(req)                                \

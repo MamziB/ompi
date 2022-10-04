@@ -259,6 +259,6 @@ extern inline int ompi_osc_ucx_state_lock(ompi_osc_ucx_module_t *module, int tar
 extern inline int ompi_osc_ucx_state_unlock(ompi_osc_ucx_module_t *module, int target,
         bool lock_acquired, void *free_ptr);
 extern inline int ompi_osc_ucx_state_unlock_nb(ompi_osc_ucx_module_t *module, int target,
-        bool lock_acquired, struct ompi_win_t *win);
+        bool lock_acquired, struct ompi_win_t *win, void *free_ptr);
 
 #endif /* OMPI_OSC_UCX_H */

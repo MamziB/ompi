@@ -891,7 +891,7 @@ OPAL_DECLSPEC int opal_common_ucx_wpmem_flush_ep_nb(opal_common_ucx_wpmem_t *mem
 
 }
 
-
+/* TODO Replace the input with opal_common_ucx_ctx_t */
 OPAL_DECLSPEC int opal_common_ucx_wpmem_fence(opal_common_ucx_wpmem_t *mem)
 {
     ucs_status_t status = UCS_OK;

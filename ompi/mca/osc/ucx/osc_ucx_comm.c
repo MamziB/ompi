@@ -1318,6 +1318,7 @@ static inline int ompi_osc_ucx_acc_rputget(void *stage_addr, int stage_count,
         }
         ucx_req->acc.target_disp = target_disp;
         ucx_req->acc.target_count = target_count;
+        ucx_req->acc.free_ptr = NULL;
     }
     sync_check = module->skip_sync_check;
     module->skip_sync_check = true; /* we already hold the acc lock, so no need for sync check*/
@@ -1472,6 +1473,7 @@ void req_completion(void *request) {
 
     if (req->acc.acc_type != NONE) {
         assert(req->acc.phase != ACC_INIT);
+        void *free_addr = NULL;
         bool release_lock = false;
         ptrdiff_t temp_lb, temp_extent;
         const void *origin_addr = req->acc.origin_addr;
@@ -1486,10 +1488,21 @@ void req_completion(void *request) {
         struct ompi_datatype_t *target_dt = req->acc.target_dt;
         struct ompi_win_t *win = req->acc.win;
         struct ompi_op_t *op = req->acc.op;
-        /* Avoid calling flush while we are already in progress */
-        req->acc.module->mem->skip_periodic_flush = true;
+
+        if (req->acc.phase !=  ACC_FINALIZE) {
+            /* Avoid calling flush while we are already in progress */
+            req->acc.module->mem->skip_periodic_flush = true;
+        }
 
         switch (req->acc.phase) {
+            case ACC_FINALIZE:
+            {
+                if (req->acc.free_ptr != NULL) {
+                    free(req->acc.free_ptr);
+                    req->acc.free_ptr = NULL;
+                }
+                break;
+            }
             case ACC_GET_RESULTS_DATA:
             {
                 /* This is a get-accumulate operation */
@@ -1599,6 +1612,7 @@ void req_completion(void *request) {
                     abort();
                 }
                 release_lock = true;
+                free_addr = temp_addr;
                 break;
             }
 
@@ -1612,7 +1626,10 @@ void req_completion(void *request) {
         if (release_lock) {
             /* Ordering between previous put/get operations and unlock will be realized
              * through the ucp fence inside the state unlock function */
-            ompi_osc_ucx_state_unlock_nb(req->acc.module, target, req->acc.lock_acquired, win);
+            ompi_osc_ucx_state_unlock_nb(req->acc.module, target, req->acc.lock_acquired, win, free_addr);
+        }
+
+        if (req->acc.phase == ACC_FINALIZE) {
             if (origin_dt != NULL) {
                 ompi_datatype_destroy(&origin_dt);
             }
@@ -1622,9 +1639,9 @@ void req_completion(void *request) {
             if (temp_dt != NULL) {
                 ompi_datatype_destroy(&temp_dt);
             }
+        } else {
+            req->acc.module->mem->skip_periodic_flush = false;
         }
-
-        req->acc.module->mem->skip_periodic_flush = false;
     }
 
     mca_osc_ucx_component.num_incomplete_req_ops--;
