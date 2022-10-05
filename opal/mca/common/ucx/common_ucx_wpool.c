@@ -807,8 +807,8 @@ OPAL_DECLSPEC int opal_common_ucx_winfo_flush(opal_common_ucx_winfo_t *winfo, in
     return rc;
 }
 
-OPAL_DECLSPEC int opal_common_ucx_ctx_flush(opal_common_ucx_ctx_t *ctx,
-                                              opal_common_ucx_flush_scope_t scope, int target)
+static inline int ctx_flush(opal_common_ucx_ctx_t *ctx,
+                                opal_common_ucx_flush_scope_t scope, int target)
 {
     _ctx_record_t *ctx_rec;
     int rc = OPAL_SUCCESS;
@@ -844,7 +844,33 @@ OPAL_DECLSPEC int opal_common_ucx_ctx_flush(opal_common_ucx_ctx_t *ctx,
             break;
         }
     }
+
     opal_mutex_unlock(&ctx->mutex);
+
+    return rc;
+}
+
+OPAL_DECLSPEC int opal_common_ucx_ctx_flush(opal_common_ucx_ctx_t *ctx,
+                                              opal_common_ucx_flush_scope_t scope,
+                                              int *nonblocking_reqs_cnt, int target)
+{
+    int rc = OPAL_SUCCESS;
+
+    if (NULL == ctx) {
+        return OPAL_SUCCESS;
+    }
+
+    rc = ctx_flush(ctx, scope, target);
+    if (rc != OPAL_SUCCESS) {
+        return rc;
+    }
+
+    while (*nonblocking_reqs_cnt != 0) {
+        rc = ctx_flush(ctx, OPAL_COMMON_UCX_SCOPE_WORKER, 0);
+        if (rc != OPAL_SUCCESS) {
+            return rc;
+        }
+    }
 
     return rc;
 }

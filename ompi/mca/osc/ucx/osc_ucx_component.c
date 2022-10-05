@@ -939,7 +939,8 @@ inline int ompi_osc_ucx_state_unlock(
         assert(result_value == TARGET_LOCK_EXCLUSIVE);
     } else if (NULL != free_ptr){
         /* flush before freeing the buffer */
-        ret = opal_common_ucx_ctx_flush(module->ctx, OPAL_COMMON_UCX_SCOPE_EP, target);
+        ret = opal_common_ucx_ctx_flush(module->ctx, OPAL_COMMON_UCX_SCOPE_EP,
+                &mca_osc_ucx_component.num_incomplete_req_ops, target);
     }
     /* TODO: encapsulate in a request and make the release non-blocking */
     if (NULL != free_ptr) {
@@ -1124,7 +1125,8 @@ int ompi_osc_ucx_free(struct ompi_win_t *win) {
     }
     OBJ_DESTRUCT(&module->pending_posts);
 
-    opal_common_ucx_ctx_flush(module->ctx, OPAL_COMMON_UCX_SCOPE_WORKER, 0);
+    opal_common_ucx_ctx_flush(module->ctx, OPAL_COMMON_UCX_SCOPE_WORKER,
+            &mca_osc_ucx_component.num_incomplete_req_ops, 0);
 
     ret = module->comm->c_coll->coll_barrier(module->comm,
                                              module->comm->c_coll->coll_barrier_module);
