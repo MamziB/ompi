@@ -865,10 +865,12 @@ OPAL_DECLSPEC int opal_common_ucx_ctx_flush(opal_common_ucx_ctx_t *ctx,
         return rc;
     }
 
-    while (*nonblocking_reqs_cnt != 0) {
-        rc = ctx_flush(ctx, OPAL_COMMON_UCX_SCOPE_WORKER, 0);
-        if (rc != OPAL_SUCCESS) {
-            return rc;
+    if (nonblocking_reqs_cnt != NULL) {
+        while (*nonblocking_reqs_cnt != 0) {
+            rc = ctx_flush(ctx, OPAL_COMMON_UCX_SCOPE_WORKER, 0);
+            if (rc != OPAL_SUCCESS) {
+                return rc;
+            }
         }
     }
 
