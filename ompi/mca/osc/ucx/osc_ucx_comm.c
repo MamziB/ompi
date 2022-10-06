@@ -1643,8 +1643,8 @@ void req_completion(void *request) {
 
         if (release_lock) {
             /* Ordering between previous put/get operations and unlock will be realized
-             * through the ucp fence inside the state unlock function */
-            ompi_osc_ucx_state_unlock_nb(req->acc.module, target, req->acc.lock_acquired, win, free_addr);
+             * through the ucp fence inside the finalize function */
+            ompi_osc_ucx_nonblocking_ops_finalize(req->acc.module, target, req->acc.lock_acquired, win, free_addr);
         }
 
         if (req->acc.phase != ACC_FINALIZE) {

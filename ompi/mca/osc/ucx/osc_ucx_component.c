@@ -954,7 +954,7 @@ inline int ompi_osc_ucx_state_unlock(
     return ret;
 }
 
-inline int ompi_osc_ucx_state_unlock_nb( ompi_osc_ucx_module_t *module, int
+inline int ompi_osc_ucx_nonblocking_ops_finalize(ompi_osc_ucx_module_t *module, int
                 target, bool lock_acquired, struct ompi_win_t *win, void *free_ptr) {
     uint64_t remote_addr = (module->state_addrs)[target] + OSC_UCX_STATE_ACC_LOCK_OFFSET;
     ucp_ep_h *ep;
