@@ -865,11 +865,18 @@ OPAL_DECLSPEC int opal_common_ucx_ctx_flush(opal_common_ucx_ctx_t *ctx,
         return rc;
     }
 
+    /* progress the nonblocking operations */
     if (nonblocking_reqs_cnt != NULL) {
+        int spin = 0;
         while (*nonblocking_reqs_cnt != 0) {
+            spin++;
             rc = ctx_flush(ctx, OPAL_COMMON_UCX_SCOPE_WORKER, 0);
             if (rc != OPAL_SUCCESS) {
                 return rc;
+            }
+            if (spin == opal_common_ucx.progress_iterations) {
+                opal_progress();
+                spin = 0;
             }
         }
     }
