@@ -40,7 +40,7 @@ typedef struct ucx_iovec {
     size_t len;
 } ucx_iovec_t;
 
-int outstanding_ops_flush_threshold = 1024;
+int outstanding_ops_flush_threshold = 64;
 
 static inline int check_sync_state(ompi_osc_ucx_module_t *module, int target,
                                    bool is_req_ops) {
