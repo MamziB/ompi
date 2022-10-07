@@ -322,9 +322,7 @@ static inline int get_dynamic_win_info(uint64_t remote_addr, ompi_osc_ucx_module
     }
     
      if (mem_rec == NULL) {
-        if (!mpi_thread_multiple_enabled) {
-            ep = OSC_UCX_GET_EP(module->mem->comm, target);
-        }
+        OSC_UCX_GET_DEFAULT_EP(ep, module->mem->comm, target);
         ret = opal_common_ucx_tlocal_fetch_spath(module->mem, target, ep);
         if (OPAL_SUCCESS != ret) {
             goto cleanup;
@@ -1296,10 +1294,9 @@ static inline int ompi_osc_ucx_acc_rputget(void *stage_addr, int stage_count,
     ompi_osc_ucx_request_t *ucx_req = NULL;
     bool sync_check;
     int ret = OMPI_SUCCESS;
+    CHECK_DYNAMIC_WIN(remote_addr, module, target, ret, true);
 
     if (acc_type != NONE) {
-        CHECK_DYNAMIC_WIN(remote_addr, module, target, ret, true);
-
         OMPI_OSC_UCX_REQUEST_ALLOC(win, ucx_req);
         assert(NULL != ucx_req);
         ucx_req->acc.op = op;
