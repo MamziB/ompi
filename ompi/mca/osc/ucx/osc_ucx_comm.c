@@ -1312,16 +1312,25 @@ static inline int ompi_osc_ucx_acc_rputget(void *stage_addr, int stage_count,
         ucx_req->acc.origin_addr = origin_addr;
         ucx_req->acc.origin_count = origin_count;
         if (origin_dt != NULL) {
-            MPI_Type_dup(origin_dt, &ucx_req->acc.origin_dt);
+            ucx_req->acc.origin_dt = origin_dt;
+            if (!ompi_datatype_is_predefined(origin_dt)) {
+                OBJ_RETAIN(ucx_req->acc.origin_dt);
+            }
         }
         ucx_req->acc.stage_addr = stage_addr;
         ucx_req->acc.stage_count = stage_count;
         if (stage_dt != NULL) {
-            MPI_Type_dup(stage_dt, &ucx_req->acc.stage_dt);
+            ucx_req->acc.stage_dt = stage_dt;
+            if (!ompi_datatype_is_predefined(stage_dt)) {
+                OBJ_RETAIN(ucx_req->acc.stage_dt);
+            }
         }
         ucx_req->acc.target = target;
         if (target_dt != NULL) {
-            MPI_Type_dup(target_dt, &ucx_req->acc.target_dt);
+            ucx_req->acc.target_dt = target_dt;
+            if (!ompi_datatype_is_predefined(target_dt)) {
+                OBJ_RETAIN(ucx_req->acc.target_dt);
+            }
         }
         ucx_req->acc.target_disp = target_disp;
         ucx_req->acc.target_count = target_count;
@@ -1510,14 +1519,14 @@ void req_completion(void *request) {
                     free(req->acc.free_ptr);
                     req->acc.free_ptr = NULL;
                 }
-                if (origin_dt != NULL) {
-                    ompi_datatype_destroy(&origin_dt);
+                if (origin_dt != NULL && !ompi_datatype_is_predefined(origin_dt)) {
+                    OBJ_RELEASE(origin_dt);
                 }
-                if (target_dt != NULL) {
-                    ompi_datatype_destroy(&target_dt);
+                if (target_dt != NULL && !ompi_datatype_is_predefined(target_dt)) {
+                    OBJ_RELEASE(target_dt);
                 }
-                if (temp_dt != NULL) {
-                    ompi_datatype_destroy(&temp_dt);
+                if (temp_dt != NULL && !ompi_datatype_is_predefined(temp_dt)) {
+                    OBJ_RELEASE(temp_dt);
                 }
                 break;
             }
@@ -1644,7 +1653,8 @@ void req_completion(void *request) {
         if (release_lock) {
             /* Ordering between previous put/get operations and unlock will be realized
              * through the ucp fence inside the finalize function */
-            ompi_osc_ucx_nonblocking_ops_finalize(req->acc.module, target, req->acc.lock_acquired, win, free_addr);
+            ompi_osc_ucx_nonblocking_ops_finalize(req->acc.module, target,
+                    req->acc.lock_acquired, win, free_addr);
         }
 
         if (req->acc.phase != ACC_FINALIZE) {
