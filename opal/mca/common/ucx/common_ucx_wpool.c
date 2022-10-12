@@ -77,6 +77,7 @@ static opal_common_ucx_winfo_t *_winfo_create(opal_common_ucx_wpool_t *wpool)
     winfo->inflight_ops = NULL;
     winfo->global_inflight_ops = 0;
     winfo->inflight_req = UCS_OK;
+    winfo->is_dflt_winfo = false;
 
     return winfo;
 
@@ -97,11 +98,13 @@ static void _winfo_destructor(opal_common_ucx_winfo_t *winfo)
 
     if (winfo->comm_size != 0) {
         size_t i;
-        for (i = 0; i < winfo->comm_size; i++) {
-            if (NULL != winfo->endpoints[i]) {
-                ucp_ep_destroy(winfo->endpoints[i]);
+        if (mpi_thread_multiple_enabled) {
+            for (i = 0; i < winfo->comm_size; i++) {
+                if (NULL != winfo->endpoints[i]) {
+                    ucp_ep_destroy(winfo->endpoints[i]);
+                }
+                assert(winfo->inflight_ops[i] == 0);
             }
-            assert(winfo->inflight_ops[i] == 0);
         }
         free(winfo->endpoints);
         free(winfo->inflight_ops);
@@ -110,7 +113,10 @@ static void _winfo_destructor(opal_common_ucx_winfo_t *winfo)
     winfo->comm_size = 0;
 
     OBJ_DESTRUCT(&winfo->mutex);
-    ucp_worker_destroy(winfo->worker);
+    if (mpi_thread_multiple_enabled || winfo->is_dflt_winfo) {
+        ucp_worker_destroy(winfo->worker);
+    }
+
 }
 
 /* -----------------------------------------------------------------------------
@@ -160,6 +166,7 @@ OPAL_DECLSPEC int opal_common_ucx_wpool_init(opal_common_ucx_wpool_t *wpool)
         rc = OPAL_ERROR;
         goto err_worker_create;
     }
+    winfo->is_dflt_winfo = true;
     wpool->dflt_winfo = winfo;
     OBJ_RETAIN(wpool->dflt_winfo);
 

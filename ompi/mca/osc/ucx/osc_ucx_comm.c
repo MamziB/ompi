@@ -140,7 +140,7 @@ static inline int ddt_put_get(ompi_osc_ucx_module_t *module,
                               int target_count, struct ompi_datatype_t *target_dt,
                               bool is_target_contig, ptrdiff_t target_lb, bool is_get) {
     ucp_ep_h *ep;
-    OSC_UCX_GET_DEFAULT_EP(ep, module->comm, target);
+    OSC_UCX_GET_DEFAULT_EP(ep, module, target);
     ucx_iovec_t *origin_ucx_iov = NULL, *target_ucx_iov = NULL;
     uint32_t origin_ucx_iov_count = 0, target_ucx_iov_count = 0;
     uint32_t origin_ucx_iov_idx = 0, target_ucx_iov_idx = 0;
@@ -260,7 +260,7 @@ cleanup:
 static inline int get_dynamic_win_info(uint64_t remote_addr, ompi_osc_ucx_module_t *module,
                                        int target, bool lock_required) {
     ucp_ep_h *ep;
-    OSC_UCX_GET_DEFAULT_EP(ep, module->comm, target);
+    OSC_UCX_GET_DEFAULT_EP(ep, module, target);
     uint64_t remote_state_addr = (module->state_addrs)[target] + OSC_UCX_STATE_DYNAMIC_WIN_CNT_OFFSET;
     size_t remote_state_len = sizeof(uint64_t) + sizeof(ompi_osc_dynamic_win_info_t) * OMPI_OSC_UCX_ATTACH_MAX;
     char *temp_buf = calloc(remote_state_len, 1);
@@ -322,7 +322,7 @@ static inline int get_dynamic_win_info(uint64_t remote_addr, ompi_osc_ucx_module
     }
     
      if (mem_rec == NULL) {
-        OSC_UCX_GET_DEFAULT_EP(ep, module->mem->comm, target);
+        OSC_UCX_GET_DEFAULT_EP(ep, module, target);
         ret = opal_common_ucx_tlocal_fetch_spath(module->mem, target, ep);
         if (OPAL_SUCCESS != ret) {
             goto cleanup;
@@ -431,7 +431,7 @@ static int do_atomic_op_intrinsic(
     opal_common_ucx_wpmem_t *mem = module->mem;
     ompi_datatype_type_size(dt, &origin_dt_bytes);
     ucp_ep_h *ep;
-    OSC_UCX_GET_DEFAULT_EP(ep, module->comm, target);
+    OSC_UCX_GET_DEFAULT_EP(ep, module, target);
 
     uint64_t remote_addr = (module->addrs[target]) + target_disp * OSC_UCX_GET_DISP(module, target);
 
@@ -495,7 +495,7 @@ int ompi_osc_ucx_put(const void *origin_addr, int origin_count, struct ompi_data
     ompi_osc_ucx_module_t *module = (ompi_osc_ucx_module_t*) win->w_osc_module;
     opal_common_ucx_wpmem_t *mem = module->mem;
     ucp_ep_h *ep;
-    OSC_UCX_GET_DEFAULT_EP(ep, module->comm, target);
+    OSC_UCX_GET_DEFAULT_EP(ep, module, target);
     uint64_t remote_addr = (module->addrs[target]) + target_disp * OSC_UCX_GET_DISP(module, target);
     bool is_origin_contig = false, is_target_contig = false;
     ptrdiff_t origin_lb, origin_extent, target_lb, target_extent;
@@ -547,7 +547,7 @@ int ompi_osc_ucx_get(void *origin_addr, int origin_count,
     ompi_osc_ucx_module_t *module = (ompi_osc_ucx_module_t*) win->w_osc_module;
     opal_common_ucx_wpmem_t *mem = module->mem;
     ucp_ep_h *ep;
-    OSC_UCX_GET_DEFAULT_EP(ep, module->comm, target);
+    OSC_UCX_GET_DEFAULT_EP(ep, module, target);
     uint64_t remote_addr = (module->addrs[target]) + target_disp * OSC_UCX_GET_DISP(module, target);
     ptrdiff_t origin_lb, origin_extent, target_lb, target_extent;
     bool is_origin_contig = false, is_target_contig = false;
@@ -776,7 +776,7 @@ do_atomic_compare_and_swap(const void *origin_addr, const void *compare_addr,
     size_t dt_bytes;
     opal_common_ucx_wpmem_t *mem = module->mem;
     ucp_ep_h *ep;
-    OSC_UCX_GET_DEFAULT_EP(ep, module->comm, target);
+    OSC_UCX_GET_DEFAULT_EP(ep, module, target);
     if (!module->acc_single_intrinsic) {
         /* Start atomicity by acquiring acc lock  */
         ret = ompi_osc_ucx_state_lock(module, target, &lock_acquired, false);
@@ -808,7 +808,7 @@ int ompi_osc_ucx_compare_and_swap(const void *origin_addr, const void *compare_a
     ompi_osc_ucx_module_t *module = (ompi_osc_ucx_module_t *)win->w_osc_module;
     opal_common_ucx_wpmem_t *mem = module->mem;
     ucp_ep_h *ep;
-    OSC_UCX_GET_DEFAULT_EP(ep, module->comm, target);
+    OSC_UCX_GET_DEFAULT_EP(ep, module, target);
     uint64_t remote_addr = (module->addrs[target]) + target_disp * OSC_UCX_GET_DISP(module, target);
     size_t dt_bytes;
     int ret = OMPI_SUCCESS;
@@ -871,7 +871,7 @@ int ompi_osc_ucx_fetch_and_op(const void *origin_addr, void *result_addr,
     ompi_osc_ucx_module_t *module = (ompi_osc_ucx_module_t*) win->w_osc_module;
     opal_common_ucx_wpmem_t *mem = module->mem;
     ucp_ep_h *ep;
-    OSC_UCX_GET_DEFAULT_EP(ep, module->comm, target);
+    OSC_UCX_GET_DEFAULT_EP(ep, module, target);
     int ret = OMPI_SUCCESS;
 
     ret = check_sync_state(module, target, false);
@@ -1114,7 +1114,7 @@ int ompi_osc_ucx_rput(const void *origin_addr, int origin_count,
                       struct ompi_win_t *win, struct ompi_request_t **request) {
     ompi_osc_ucx_module_t *module = (ompi_osc_ucx_module_t*) win->w_osc_module;
     ucp_ep_h *ep;
-    OSC_UCX_GET_DEFAULT_EP(ep, module->comm, target);
+    OSC_UCX_GET_DEFAULT_EP(ep, module, target);
     opal_common_ucx_wpmem_t *mem = module->mem;
     uint64_t remote_addr = (module->state_addrs[target]) + OSC_UCX_STATE_REQ_FLAG_OFFSET;
     ompi_osc_ucx_request_t *ucx_req = NULL;
@@ -1169,7 +1169,7 @@ int ompi_osc_ucx_rget(void *origin_addr, int origin_count,
                       struct ompi_request_t **request) {
     ompi_osc_ucx_module_t *module = (ompi_osc_ucx_module_t*) win->w_osc_module;
     ucp_ep_h *ep;
-    OSC_UCX_GET_DEFAULT_EP(ep, module->comm, target);
+    OSC_UCX_GET_DEFAULT_EP(ep, module, target);
     opal_common_ucx_wpmem_t *mem = module->mem;
     uint64_t remote_addr = (module->state_addrs[target]) + OSC_UCX_STATE_REQ_FLAG_OFFSET;
     ompi_osc_ucx_request_t *ucx_req = NULL;
@@ -1288,7 +1288,7 @@ static inline int ompi_osc_ucx_acc_rputget(void *stage_addr, int stage_count,
                     int phase, int acc_type) {
     ompi_osc_ucx_module_t *module = (ompi_osc_ucx_module_t*) win->w_osc_module;
     ucp_ep_h *ep;
-    OSC_UCX_GET_DEFAULT_EP(ep, module->comm, target);
+    OSC_UCX_GET_DEFAULT_EP(ep, module, target);
     opal_common_ucx_wpmem_t *mem = module->mem;
     uint64_t remote_addr = (module->state_addrs[target]) + OSC_UCX_STATE_REQ_FLAG_OFFSET;
     ompi_osc_ucx_request_t *ucx_req = NULL;

@@ -184,7 +184,7 @@ int ompi_osc_ucx_complete(struct ompi_win_t *win) {
     for (i = 0; i < size; i++) {
         uint64_t remote_addr = module->state_addrs[module->start_grp_ranks[i]] + OSC_UCX_STATE_COMPLETE_COUNT_OFFSET; // write to state.complete_count on remote side
 
-        OSC_UCX_GET_DEFAULT_EP(ep, module->comm, module->start_grp_ranks[i]);
+        OSC_UCX_GET_DEFAULT_EP(ep, module, module->start_grp_ranks[i]);
 
         ret = opal_common_ucx_wpmem_post(module->state_mem, UCP_ATOMIC_POST_OP_ADD,
                                        1, module->start_grp_ranks[i], sizeof(uint64_t),
@@ -250,7 +250,7 @@ int ompi_osc_ucx_post(struct ompi_group_t *group, int mpi_assert, struct ompi_wi
             uint64_t remote_addr = module->state_addrs[ranks_in_win_grp[i]] + OSC_UCX_STATE_POST_INDEX_OFFSET; // write to state.post_index on remote side
             uint64_t curr_idx = 0, result = 0;
 
-            OSC_UCX_GET_DEFAULT_EP(ep, module->comm, ranks_in_win_grp[i]);
+            OSC_UCX_GET_DEFAULT_EP(ep, module, ranks_in_win_grp[i]);
 
             /* do fop first to get an post index */
             ret = opal_common_ucx_wpmem_fetch(module->state_mem, UCP_ATOMIC_FETCH_OP_FADD,

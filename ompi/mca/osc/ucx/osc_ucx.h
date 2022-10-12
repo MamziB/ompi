@@ -35,6 +35,8 @@ typedef struct ompi_osc_ucx_component {
     opal_free_list_t requests; /* request free list for the r* communication variants */
     bool env_initialized; /* UCX environment is initialized or not */
     int num_incomplete_req_ops;
+    int comm_world_size;
+    ucp_ep_h *endpoints;
     int num_modules;
     bool no_locks; /* Default value of the no_locks info key for new windows */
     bool acc_single_intrinsic;
@@ -113,6 +115,7 @@ typedef struct ompi_osc_ucx_module {
     size_t size;
     uint64_t *addrs;
     uint64_t *state_addrs;
+    uint64_t *comm_world_ranks;
     int disp_unit; /* if disp_unit >= 0, then everyone has the same
                     * disp unit size; if disp_unit == -1, then we
                     * need to look at disp_units */
@@ -159,16 +162,16 @@ typedef struct ompi_osc_ucx_lock {
     bool is_nocheck;
 } ompi_osc_ucx_lock_t;
 
-#define OSC_UCX_GET_EP(comm_, rank_) (ompi_comm_peer_lookup(comm_, rank_)->proc_endpoints[OMPI_PROC_ENDPOINT_TAG_UCX])
+#define OSC_UCX_GET_EP(_module, rank_) (mca_osc_ucx_component.endpoints[_module->comm_world_ranks[rank_]])
 #define OSC_UCX_GET_DISP(module_, rank_) ((module_->disp_unit < 0) ? module_->disp_units[rank_] : module_->disp_unit)
 
 extern bool mpi_thread_multiple_enabled;
 
-#define OSC_UCX_GET_DEFAULT_EP(_ep_ptr, _comm, _target)                 \
+#define OSC_UCX_GET_DEFAULT_EP(_ep_ptr, _module, _target)                 \
     if (mpi_thread_multiple_enabled) {                                  \
         _ep_ptr = NULL;                                                 \
     } else {                                                            \
-        _ep_ptr = (ucp_ep_h *)&(OSC_UCX_GET_EP(_comm, _target));        \
+        _ep_ptr = (ucp_ep_h *)&(OSC_UCX_GET_EP(_module, _target));        \
     }
 
 extern int outstanding_ops_flush_threshold;

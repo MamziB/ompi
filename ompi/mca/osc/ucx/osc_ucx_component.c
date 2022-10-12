@@ -78,7 +78,9 @@ ompi_osc_ucx_component_t mca_osc_ucx_component = {
     .env_initialized        = false,
     .num_incomplete_req_ops = 0,
     .num_modules            = 0,
-    .acc_single_intrinsic   = false
+    .acc_single_intrinsic   = false,
+    .comm_world_size        = 0,
+    .endpoints              = NULL
 };
 
 ompi_osc_ucx_module_t ompi_osc_ucx_module_template = {
@@ -296,6 +298,17 @@ static int component_init(bool enable_progress_threads, bool enable_mpi_threads)
 }
 
 static int component_finalize(void) {
+    assert(mca_osc_ucx_component.num_incomplete_req_ops == 0);
+    if (!mpi_thread_multiple_enabled) {
+        int i;
+        for (i = 0; i < mca_osc_ucx_component.comm_world_size; i++) {
+            ucp_ep_h ep = mca_osc_ucx_component.endpoints[i];
+            if (ep != NULL) {
+                ucp_ep_destroy(ep);
+            }
+        }
+        free(mca_osc_ucx_component.endpoints);
+    }
     opal_common_ucx_mca_deregister();
     if (mca_osc_ucx_component.env_initialized) {
         opal_common_ucx_wpool_finalize(mca_osc_ucx_component.wpool);
@@ -451,7 +464,7 @@ static int component_select(struct ompi_win_t *win, void **base, size_t size, in
     opal_common_ucx_mem_type_t mem_type;
     char *my_mem_addr;
     int my_mem_addr_size;
-    uint64_t my_info[2] = {0};
+    uint64_t my_info[3] = {0};
     char *recv_buf = NULL;
     void *dynamic_base = NULL;
     unsigned long total, *rbuf;
@@ -485,7 +498,10 @@ static int component_select(struct ompi_win_t *win, void **base, size_t size, in
             OSC_UCX_VERBOSE(1, "opal_common_ucx_wpool_init failed: %d", ret);
             goto select_unlock;
         }
-
+        if (!mpi_thread_multiple_enabled) {
+            mca_osc_ucx_component.comm_world_size = ompi_proc_world_size();
+            mca_osc_ucx_component.endpoints = calloc(mca_osc_ucx_component.comm_world_size, sizeof(ucp_ep_h));
+        }
         /* Make sure that all memory updates performed above are globally
          * observable before (mca_osc_ucx_component.env_initialized = true)
          */
@@ -762,10 +778,11 @@ select_unlock:
         my_info[0] = (uint64_t)dynamic_base;
     }
     my_info[1] = (uint64_t)state_base;
+    my_info[2] = ompi_comm_rank(&ompi_mpi_comm_world.comm);
 
-    recv_buf = (char *)calloc(comm_size, 2 * sizeof(uint64_t));
-    ret = comm->c_coll->coll_allgather((void *)my_info, 2 * sizeof(uint64_t),
-                                       MPI_BYTE, recv_buf, 2 * sizeof(uint64_t),
+    recv_buf = (char *)calloc(comm_size, sizeof(my_info));
+    ret = comm->c_coll->coll_allgather((void *)my_info, sizeof(my_info),
+                                       MPI_BYTE, recv_buf, sizeof(my_info),
                                        MPI_BYTE, comm, comm->c_coll->coll_allgather_module);
     if (ret != OMPI_SUCCESS) {
         goto error;
@@ -773,9 +790,11 @@ select_unlock:
 
     module->addrs = calloc(comm_size, sizeof(uint64_t));
     module->state_addrs = calloc(comm_size, sizeof(uint64_t));
+    module->comm_world_ranks = calloc(comm_size, sizeof(uint64_t));
     for (i = 0; i < comm_size; i++) {
-        memcpy(&(module->addrs[i]), recv_buf + i * 2 * sizeof(uint64_t), sizeof(uint64_t));
-        memcpy(&(module->state_addrs[i]), recv_buf + i * 2 * sizeof(uint64_t) + sizeof(uint64_t), sizeof(uint64_t));
+        memcpy(&(module->addrs[i]), recv_buf + i * 3 * sizeof(uint64_t), sizeof(uint64_t));
+        memcpy(&(module->state_addrs[i]), recv_buf + i * 3 * sizeof(uint64_t) + sizeof(uint64_t), sizeof(uint64_t));
+        memcpy(&(module->comm_world_ranks[i]), recv_buf + i * 3 * sizeof(uint64_t) + 2 * sizeof(uint64_t), sizeof(uint64_t));
     }
     free(recv_buf);
 
@@ -885,7 +904,7 @@ inline int ompi_osc_ucx_state_lock(
     uint64_t result_value = -1;
     uint64_t remote_addr = (module->state_addrs)[target] + OSC_UCX_STATE_ACC_LOCK_OFFSET;
     ucp_ep_h *ep;
-    OSC_UCX_GET_DEFAULT_EP(ep, module->comm, target);
+    OSC_UCX_GET_DEFAULT_EP(ep, module, target);
     int ret = OMPI_SUCCESS;
 
     if (force_lock || ompi_osc_need_acc_lock(module, target)) {
@@ -920,7 +939,7 @@ inline int ompi_osc_ucx_state_unlock(
     void                  *free_ptr) {
     uint64_t remote_addr = (module->state_addrs)[target] + OSC_UCX_STATE_ACC_LOCK_OFFSET;
     ucp_ep_h *ep;
-    OSC_UCX_GET_DEFAULT_EP(ep, module->comm, target);
+    OSC_UCX_GET_DEFAULT_EP(ep, module, target);
     int ret = OMPI_SUCCESS;
 
     if (lock_acquired) {
@@ -958,7 +977,7 @@ inline int ompi_osc_ucx_nonblocking_ops_finalize(ompi_osc_ucx_module_t *module, 
                 target, bool lock_acquired, struct ompi_win_t *win, void *free_ptr) {
     uint64_t remote_addr = (module->state_addrs)[target] + OSC_UCX_STATE_ACC_LOCK_OFFSET;
     ucp_ep_h *ep;
-    OSC_UCX_GET_DEFAULT_EP(ep, module->comm, target);
+    OSC_UCX_GET_DEFAULT_EP(ep, module, target);
     int ret = OMPI_SUCCESS;
     ompi_osc_ucx_request_t *ucx_req = NULL;
 
@@ -1158,6 +1177,7 @@ int ompi_osc_ucx_free(struct ompi_win_t *win) {
 
     free(module->addrs);
     free(module->state_addrs);
+    free(module->comm_world_ranks);
 
     opal_common_ucx_wpmem_free(module->state_mem);
     if (NULL != module->mem) {

@@ -129,6 +129,7 @@ struct opal_common_ucx_winfo {
     short *inflight_ops;
     short global_inflight_ops;
     ucs_status_ptr_t inflight_req;
+    bool is_dflt_winfo;
 };
 OBJ_CLASS_DECLARATION(opal_common_ucx_winfo_t);
 
