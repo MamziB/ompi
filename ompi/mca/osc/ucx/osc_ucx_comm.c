@@ -40,7 +40,7 @@ typedef struct ucx_iovec {
     size_t len;
 } ucx_iovec_t;
 
-int outstanding_ops_flush_threshold = 64;
+int ompi_osc_ucx_outstanding_ops_flush_threshold = 64;
 
 static inline int check_sync_state(ompi_osc_ucx_module_t *module, int target,
                                    bool is_req_ops) {
@@ -1414,7 +1414,7 @@ static int ompi_osc_ucx_get_accumulate_nonblocking(const void *origin_addr, int 
         return ret;
     }
 
-    if (mca_osc_ucx_component.num_incomplete_req_ops > outstanding_ops_flush_threshold) {
+    if (mca_osc_ucx_component.num_incomplete_req_ops > ompi_osc_ucx_outstanding_ops_flush_threshold) {
         ret = opal_common_ucx_ctx_flush(module->ctx, OPAL_COMMON_UCX_SCOPE_WORKER,
                 &mca_osc_ucx_component.num_incomplete_req_ops, 0);
         if (ret != OPAL_SUCCESS) {

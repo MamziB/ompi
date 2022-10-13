@@ -174,7 +174,7 @@ extern bool mpi_thread_multiple_enabled;
         _ep_ptr = (ucp_ep_h *)&(OSC_UCX_GET_EP(_module, _target));        \
     }
 
-extern int outstanding_ops_flush_threshold;
+extern int ompi_osc_ucx_outstanding_ops_flush_threshold;
 
 int ompi_osc_ucx_shared_query(struct ompi_win_t *win, int rank, size_t *size,
         int *disp_unit, void * baseptr);
