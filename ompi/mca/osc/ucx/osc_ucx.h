@@ -47,12 +47,12 @@ typedef struct ompi_osc_ucx_component {
 
 OMPI_DECLSPEC extern ompi_osc_ucx_component_t mca_osc_ucx_component;
 
-#define INCREMENT_OUTSTANDING_NB_OPS                                \
+#define OSC_UCX_INCREMENT_OUTSTANDING_NB_OPS()                      \
     do {                                                            \
         mca_osc_ucx_component.num_incomplete_req_ops++;             \
     } while(0);
 
-#define DECREMENT_OUTSTANDING_NB_OPS                                \
+#define OSC_UCX_DECREMENT_OUTSTANDING_NB_OPS()                      \
     do {                                                            \
         mca_osc_ucx_component.num_incomplete_req_ops--;             \
     } while(0);

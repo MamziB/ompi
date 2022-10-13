@@ -995,7 +995,7 @@ inline int ompi_osc_ucx_nonblocking_ops_finalize(ompi_osc_ucx_module_t *module, 
     }
 
     if (lock_acquired) {
-        INCREMENT_OUTSTANDING_NB_OPS;
+        OSC_UCX_INCREMENT_OUTSTANDING_NB_OPS();
         ret = opal_common_ucx_wpmem_fetch_nb(module->state_mem,
                                         UCP_ATOMIC_FETCH_OP_SWAP, TARGET_LOCK_UNLOCKED,
                                         target, &(module->req_result), sizeof(module->req_result),
@@ -1008,7 +1008,7 @@ inline int ompi_osc_ucx_nonblocking_ops_finalize(ompi_osc_ucx_module_t *module, 
     } else {
         /* Lock is not acquired, but still, we need to know when the 
          * acc is finalized so that we can free the temp buffers */
-        INCREMENT_OUTSTANDING_NB_OPS;
+        OSC_UCX_INCREMENT_OUTSTANDING_NB_OPS();
         ret = opal_common_ucx_wpmem_flush_ep_nb(module->mem, target, req_completion, ucx_req, ep);
 
         if (ret != OMPI_SUCCESS) {

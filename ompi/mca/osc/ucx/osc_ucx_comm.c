@@ -1135,7 +1135,7 @@ int ompi_osc_ucx_rput(const void *origin_addr, int origin_count,
 
     OMPI_OSC_UCX_REQUEST_ALLOC(win, ucx_req);
 
-    INCREMENT_OUTSTANDING_NB_OPS;
+    OSC_UCX_INCREMENT_OUTSTANDING_NB_OPS();
     ret = opal_common_ucx_wpmem_flush_ep_nb(mem, target, req_completion, ucx_req, ep);
 
     if (ret != OMPI_SUCCESS) {
@@ -1190,7 +1190,7 @@ int ompi_osc_ucx_rget(void *origin_addr, int origin_count,
 
     OMPI_OSC_UCX_REQUEST_ALLOC(win, ucx_req);
 
-    INCREMENT_OUTSTANDING_NB_OPS;
+    OSC_UCX_INCREMENT_OUTSTANDING_NB_OPS();
     ret = opal_common_ucx_wpmem_flush_ep_nb(mem, target, req_completion, ucx_req, ep);
 
     if (ret != OMPI_SUCCESS) {
@@ -1349,7 +1349,7 @@ static inline int ompi_osc_ucx_acc_rputget(void *stage_addr, int stage_count,
 
     module->skip_sync_check = sync_check;
     if (acc_type != NONE) {
-        INCREMENT_OUTSTANDING_NB_OPS;
+        OSC_UCX_INCREMENT_OUTSTANDING_NB_OPS();
         ret = opal_common_ucx_wpmem_flush_ep_nb(mem, target, req_completion, ucx_req, ep);
 
         if (ret != OMPI_SUCCESS) {
@@ -1660,7 +1660,7 @@ void req_completion(void *request) {
         }
     }
 
-    DECREMENT_OUTSTANDING_NB_OPS;
+    OSC_UCX_DECREMENT_OUTSTANDING_NB_OPS();
     ompi_request_complete(&(req->super), true);
     assert(mca_osc_ucx_component.num_incomplete_req_ops >= 0);
 }
