@@ -86,6 +86,7 @@ typedef struct {
     char *recv_worker_addrs;
     int *recv_worker_displs;
     size_t comm_size;
+    int num_incomplete_req_ops;
 } opal_common_ucx_ctx_t;
 
 /* Worker Pool memory (wpmem) is an object that represents a remotely accessible
@@ -251,7 +252,7 @@ OPAL_DECLSPEC void opal_common_ucx_wpmem_free(opal_common_ucx_wpmem_t *mem);
 
 OPAL_DECLSPEC int opal_common_ucx_ctx_flush(opal_common_ucx_ctx_t *ctx,
                                               opal_common_ucx_flush_scope_t scope,
-                                              int *nonblocking_reqs_cnt, int target);
+                                              int target);
 OPAL_DECLSPEC int opal_common_ucx_wpmem_flush_ep_nb(opal_common_ucx_wpmem_t *mem,
                                                     int target,
                                                     opal_common_ucx_user_req_handler_t user_req_cb,

@@ -356,6 +356,7 @@ OPAL_DECLSPEC int opal_common_ucx_wpctx_create(opal_common_ucx_wpool_t *wpool, i
 
     ctx->recv_worker_addrs = NULL;
     ctx->recv_worker_displs = NULL;
+    ctx->num_incomplete_req_ops = 0;
     ret = exchange_func(wpool->recv_waddr, wpool->recv_waddr_len, &ctx->recv_worker_addrs,
                         &ctx->recv_worker_displs, exchange_metadata);
     if (ret != OPAL_SUCCESS) {
@@ -858,10 +859,10 @@ static inline int ctx_flush(opal_common_ucx_ctx_t *ctx,
 }
 
 OPAL_DECLSPEC int opal_common_ucx_ctx_flush(opal_common_ucx_ctx_t *ctx,
-                                              opal_common_ucx_flush_scope_t scope,
-                                              int *nonblocking_reqs_cnt, int target)
+                                    opal_common_ucx_flush_scope_t scope, int target)
 {
     int rc = OPAL_SUCCESS;
+    int spin = 0;
 
     if (NULL == ctx) {
         return OPAL_SUCCESS;
@@ -873,18 +874,15 @@ OPAL_DECLSPEC int opal_common_ucx_ctx_flush(opal_common_ucx_ctx_t *ctx,
     }
 
     /* progress the nonblocking operations */
-    if (nonblocking_reqs_cnt != NULL) {
-        int spin = 0;
-        while (*nonblocking_reqs_cnt != 0) {
-            spin++;
-            rc = ctx_flush(ctx, OPAL_COMMON_UCX_SCOPE_WORKER, 0);
-            if (rc != OPAL_SUCCESS) {
-                return rc;
-            }
-            if (spin == opal_common_ucx.progress_iterations) {
-                opal_progress();
-                spin = 0;
-            }
+    while (ctx->num_incomplete_req_ops != 0) {
+        spin++;
+        rc = ctx_flush(ctx, OPAL_COMMON_UCX_SCOPE_WORKER, 0);
+        if (rc != OPAL_SUCCESS) {
+            return rc;
+        }
+        if (spin == opal_common_ucx.progress_iterations) {
+            opal_progress();
+            spin = 0;
         }
     }
 

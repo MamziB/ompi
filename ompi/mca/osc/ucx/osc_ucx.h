@@ -34,7 +34,6 @@ typedef struct ompi_osc_ucx_component {
     bool enable_mpi_threads;
     opal_free_list_t requests; /* request free list for the r* communication variants */
     bool env_initialized; /* UCX environment is initialized or not */
-    int num_incomplete_req_ops;
     int comm_world_size;
     ucp_ep_h *endpoints;
     int num_modules;
@@ -47,14 +46,14 @@ typedef struct ompi_osc_ucx_component {
 
 OMPI_DECLSPEC extern ompi_osc_ucx_component_t mca_osc_ucx_component;
 
-#define OSC_UCX_INCREMENT_OUTSTANDING_NB_OPS()                      \
+#define OSC_UCX_INCREMENT_OUTSTANDING_NB_OPS(_module)               \
     do {                                                            \
-        mca_osc_ucx_component.num_incomplete_req_ops++;             \
+        _module->ctx->num_incomplete_req_ops++;                     \
     } while(0);
 
-#define OSC_UCX_DECREMENT_OUTSTANDING_NB_OPS()                      \
+#define OSC_UCX_DECREMENT_OUTSTANDING_NB_OPS(_module)               \
     do {                                                            \
-        mca_osc_ucx_component.num_incomplete_req_ops--;             \
+        _module->ctx->num_incomplete_req_ops--;                     \
     } while(0);
 
 typedef enum ompi_osc_ucx_epoch {

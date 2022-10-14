@@ -37,7 +37,6 @@ typedef struct ompi_osc_ucx_accumulate_request {
     struct ompi_op_t *op;
     int phase;
     bool lock_acquired;
-    ompi_osc_ucx_module_t *module;
     int target;
     struct ompi_win_t *win;
     const void *origin_addr;
@@ -55,6 +54,7 @@ typedef struct ompi_osc_ucx_accumulate_request {
 typedef struct ompi_osc_ucx_request {
     ompi_request_t super;
     ompi_osc_ucx_accumulate_request_t acc;
+    ompi_osc_ucx_module_t *module;
 } ompi_osc_ucx_request_t;
 
 OBJ_CLASS_DECLARATION(ompi_osc_ucx_request_t);
@@ -65,7 +65,7 @@ OBJ_CLASS_DECLARATION(ompi_osc_ucx_request_t);
         do {                                                            \
             item = opal_free_list_get(&mca_osc_ucx_component.requests); \
             if (item == NULL) {                                         \
-                if (mca_osc_ucx_component.num_incomplete_req_ops > 0) { \
+                if (module->ctx->num_incomplete_req_ops > 0) { \
                     opal_common_ucx_wpool_progress(mca_osc_ucx_component.wpool); \
                 }                                                       \
             }                                                           \
@@ -76,10 +76,10 @@ OBJ_CLASS_DECLARATION(ompi_osc_ucx_request_t);
         req->super.req_complete = false;                                \
         req->super.req_state = OMPI_REQUEST_ACTIVE;                     \
         req->super.req_status.MPI_ERROR = MPI_SUCCESS;                  \
+        req->module = NULL;                                             \
         req->acc.op = MPI_NO_OP;                                        \
         req->acc.phase = ACC_INIT;                                      \
-        req->acc.acc_type = NONE;                                 \
-        req->acc.module = NULL;                                         \
+        req->acc.acc_type = NONE;                                       \
         req->acc.target = -1;                                           \
         req->acc.lock_acquired = false;                                 \
         req->acc.win = NULL;                                            \
