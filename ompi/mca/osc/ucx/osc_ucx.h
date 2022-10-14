@@ -46,14 +46,14 @@ typedef struct ompi_osc_ucx_component {
 
 OMPI_DECLSPEC extern ompi_osc_ucx_component_t mca_osc_ucx_component;
 
-#define OSC_UCX_INCREMENT_OUTSTANDING_NB_OPS(_module)               \
-    do {                                                            \
-        _module->ctx->num_incomplete_req_ops++;                     \
+#define OSC_UCX_INCREMENT_OUTSTANDING_NB_OPS(_module)                               \
+    do {                                                                            \
+        opal_atomic_add_fetch_size_t(&_module->ctx->num_incomplete_req_ops, 1);     \
     } while(0);
 
-#define OSC_UCX_DECREMENT_OUTSTANDING_NB_OPS(_module)               \
-    do {                                                            \
-        _module->ctx->num_incomplete_req_ops--;                     \
+#define OSC_UCX_DECREMENT_OUTSTANDING_NB_OPS(_module)                               \
+    do {                                                                            \
+        opal_atomic_add_fetch_size_t(&_module->ctx->num_incomplete_req_ops, -1);    \
     } while(0);
 
 typedef enum ompi_osc_ucx_epoch {
@@ -164,10 +164,10 @@ typedef struct ompi_osc_ucx_lock {
 #define OSC_UCX_GET_EP(_module, rank_) (mca_osc_ucx_component.endpoints[_module->comm_world_ranks[rank_]])
 #define OSC_UCX_GET_DISP(module_, rank_) ((module_->disp_unit < 0) ? module_->disp_units[rank_] : module_->disp_unit)
 
-extern bool opal_mca_common_ucx_mpi_thread_multiple_enabled;
+extern bool thread_enabled;
 
 #define OSC_UCX_GET_DEFAULT_EP(_ep_ptr, _module, _target)                   \
-    if (opal_mca_common_ucx_mpi_thread_multiple_enabled) {                  \
+    if (thread_enabled) {                  \
         _ep_ptr = NULL;                                                     \
     } else {                                                                \
         _ep_ptr = (ucp_ep_h *)&(OSC_UCX_GET_EP(_module, _target));          \

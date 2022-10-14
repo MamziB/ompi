@@ -175,7 +175,7 @@ static int component_register(void) {
                                            MCA_BASE_VAR_SCOPE_GROUP, &mca_osc_ucx_component.no_locks);
     free(description_str);
 
-    opal_mca_common_ucx_mpi_thread_multiple_enabled = opal_using_threads();
+    thread_enabled = opal_using_threads();
     mca_osc_ucx_component.acc_single_intrinsic = false;
     opal_asprintf(&description_str, "Enable optimizations for MPI_Fetch_and_op, MPI_Accumulate, etc for codes "
              "that will not use anything more than a single predefined datatype (default: %s)",
@@ -188,7 +188,7 @@ static int component_register(void) {
                                            MCA_BASE_VAR_SCOPE_GROUP, &enable_nonblocking_accumulate);
     (void) mca_base_component_var_register(&mca_osc_ucx_component.super.osc_version, "enable_wpool_thread_multiple",
                                            description_str, MCA_BASE_VAR_TYPE_BOOL, NULL, 0, 0, OPAL_INFO_LVL_5,
-                                           MCA_BASE_VAR_SCOPE_GROUP, &opal_mca_common_ucx_mpi_thread_multiple_enabled);
+                                           MCA_BASE_VAR_SCOPE_GROUP, &thread_enabled);
     (void) mca_base_component_var_register(&mca_osc_ucx_component.super.osc_version, "outstanding_ops_flush_threshold",
                                            description_str, MCA_BASE_VAR_TYPE_INT, NULL, 0, 0, OPAL_INFO_LVL_5,
                                            MCA_BASE_VAR_SCOPE_GROUP, &ompi_osc_ucx_outstanding_ops_flush_threshold);
@@ -298,7 +298,7 @@ static int component_init(bool enable_progress_threads, bool enable_mpi_threads)
 }
 
 static int component_finalize(void) {
-    if (!opal_mca_common_ucx_mpi_thread_multiple_enabled) {
+    if (!thread_enabled) {
         int i;
         for (i = 0; i < mca_osc_ucx_component.comm_world_size; i++) {
             ucp_ep_h ep = mca_osc_ucx_component.endpoints[i];
@@ -497,7 +497,7 @@ static int component_select(struct ompi_win_t *win, void **base, size_t size, in
             OSC_UCX_VERBOSE(1, "opal_common_ucx_wpool_init failed: %d", ret);
             goto select_unlock;
         }
-        if (!opal_mca_common_ucx_mpi_thread_multiple_enabled) {
+        if (!thread_enabled) {
             mca_osc_ucx_component.comm_world_size = ompi_proc_world_size();
             mca_osc_ucx_component.endpoints = calloc(mca_osc_ucx_component.comm_world_size, sizeof(ucp_ep_h));
         }

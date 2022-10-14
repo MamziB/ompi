@@ -31,7 +31,7 @@ __thread FILE *tls_pf = NULL;
 __thread int initialized = 0;
 #endif
 
-bool opal_mca_common_ucx_mpi_thread_multiple_enabled;
+bool thread_enabled;
 
 static _ctx_record_t *_tlocal_add_ctx_rec(opal_common_ucx_ctx_t *ctx);
 static inline _ctx_record_t *_tlocal_get_ctx_rec(opal_tsd_tracked_key_t tls_key);
@@ -50,7 +50,7 @@ static opal_common_ucx_winfo_t *_winfo_create(opal_common_ucx_wpool_t *wpool)
     ucs_status_t status;
     opal_common_ucx_winfo_t *winfo = NULL;
 
-    if (opal_mca_common_ucx_mpi_thread_multiple_enabled || wpool->dflt_winfo == NULL) {
+    if (thread_enabled || wpool->dflt_winfo == NULL) {
         memset(&worker_params, 0, sizeof(worker_params));
         worker_params.field_mask = UCP_WORKER_PARAM_FIELD_THREAD_MODE;
         worker_params.thread_mode = UCS_THREAD_MODE_SINGLE;
@@ -98,7 +98,7 @@ static void _winfo_destructor(opal_common_ucx_winfo_t *winfo)
 
     if (winfo->comm_size != 0) {
         size_t i;
-        if (opal_mca_common_ucx_mpi_thread_multiple_enabled) {
+        if (thread_enabled) {
             for (i = 0; i < winfo->comm_size; i++) {
                 if (NULL != winfo->endpoints[i]) {
                     ucp_ep_destroy(winfo->endpoints[i]);
@@ -113,7 +113,7 @@ static void _winfo_destructor(opal_common_ucx_winfo_t *winfo)
     winfo->comm_size = 0;
 
     OBJ_DESTRUCT(&winfo->mutex);
-    if (opal_mca_common_ucx_mpi_thread_multiple_enabled || winfo->is_dflt_winfo) {
+    if (thread_enabled || winfo->is_dflt_winfo) {
         ucp_worker_destroy(winfo->worker);
     }
 
@@ -732,13 +732,13 @@ OPAL_DECLSPEC int opal_common_ucx_tlocal_fetch_spath(opal_common_ucx_wpmem_t *me
 
     /* Obtain the endpoint */
     if (OPAL_UNLIKELY(NULL == winfo->endpoints[target])) {
-        if (opal_mca_common_ucx_mpi_thread_multiple_enabled || (dflt_ep == NULL) ||
+        if (thread_enabled || (dflt_ep == NULL) ||
                 (*dflt_ep == NULL)) {
             rc = _tlocal_ctx_connect(ctx_rec, target);
             if (rc != OPAL_SUCCESS) {
                 return rc;
             }
-            if (!opal_mca_common_ucx_mpi_thread_multiple_enabled && (dflt_ep != NULL) &&
+            if (!thread_enabled && (dflt_ep != NULL) &&
                     (*dflt_ep == NULL)) {
                 /* set the proc ep */
                 *dflt_ep = winfo->endpoints[target];
