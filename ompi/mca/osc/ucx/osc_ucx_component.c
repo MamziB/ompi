@@ -42,7 +42,7 @@ static void _osc_ucx_init_unlock(void)
     }
 }
 
-bool enable_nonblocking_accumulate = false;
+static bool enable_nonblocking_accumulate = true;
 
 static int component_open(void);
 static int component_register(void);
