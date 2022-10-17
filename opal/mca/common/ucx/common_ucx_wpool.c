@@ -448,8 +448,6 @@ int opal_common_ucx_wpmem_create(opal_common_ucx_ctx_t *ctx, void **mem_base, si
     OBJ_CONSTRUCT(&mem->tls_key, opal_tsd_tracked_key_t);
     opal_tsd_tracked_key_set_destructor(&mem->tls_key, _mem_rec_destructor);
 
-    mem->comm = exchange_metadata;
-
     (*mem_ptr) = mem;
     (*my_mem_addr) = rkey_addr;
     (*my_mem_addr_size) = rkey_addr_len;

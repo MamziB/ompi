@@ -106,7 +106,6 @@ typedef struct {
     ucp_mem_h memh;
     char *mem_addrs;
     int *mem_displs;
-    void *comm;
     bool skip_periodic_flush;
 
     /* TLS item that allows each thread to
