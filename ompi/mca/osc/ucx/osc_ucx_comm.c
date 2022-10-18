@@ -40,7 +40,7 @@ typedef struct ucx_iovec {
     size_t len;
 } ucx_iovec_t;
 
-int ompi_osc_ucx_outstanding_ops_flush_threshold = 64;
+size_t ompi_osc_ucx_outstanding_ops_flush_threshold = 64;
 
 static inline int check_sync_state(ompi_osc_ucx_module_t *module, int target,
                                    bool is_req_ops) {
@@ -423,7 +423,7 @@ static int do_atomic_op_intrinsic(
     struct ompi_datatype_t *dt,
     ptrdiff_t               target_disp,
     void                   *result_addr,
-    ompi_osc_ucx_request_t *ucx_req)
+    ompi_osc_ucx_accumulate_request_t *ucx_req)
 {
     int ret = OMPI_SUCCESS;
     size_t origin_dt_bytes;
@@ -598,7 +598,7 @@ int accumulate_req(const void *origin_addr, int origin_count,
                    int target, ptrdiff_t target_disp, int target_count,
                    struct ompi_datatype_t *target_dt,
                    struct ompi_op_t *op, struct ompi_win_t *win,
-                   ompi_osc_ucx_request_t *ucx_req) {
+                   ompi_osc_ucx_accumulate_request_t *ucx_req) {
 
     ompi_osc_ucx_module_t *module = (ompi_osc_ucx_module_t*) win->w_osc_module;
     int ret = OMPI_SUCCESS;
@@ -735,7 +735,7 @@ int accumulate_req(const void *origin_addr, int origin_count,
 
     if (NULL != ucx_req) {
         // nothing to wait for, mark request as completed
-        ompi_request_complete(&ucx_req->super, true);
+        ompi_request_complete(&ucx_req->super.super, true);
     }
 
     return ompi_osc_ucx_state_unlock(module, target, lock_acquired, free_ptr);
@@ -927,7 +927,7 @@ int get_accumulate_req(const void *origin_addr, int origin_count,
                        int target, ptrdiff_t target_disp,
                        int target_count, struct ompi_datatype_t *target_dt,
                        struct ompi_op_t *op, struct ompi_win_t *win,
-                       ompi_osc_ucx_request_t *ucx_req) {
+                       ompi_osc_ucx_accumulate_request_t *ucx_req) {
     ompi_osc_ucx_module_t *module = (ompi_osc_ucx_module_t*) win->w_osc_module;
     int ret = OMPI_SUCCESS;
     uint64_t remote_addr = (module->addrs[target]) + target_disp *
@@ -1067,7 +1067,7 @@ int get_accumulate_req(const void *origin_addr, int origin_count,
 
     if (NULL != ucx_req) {
         // nothing to wait for, mark request as completed
-        ompi_request_complete(&ucx_req->super, true);
+        ompi_request_complete(&ucx_req->super.super, true);
     }
 
 
@@ -1110,7 +1110,7 @@ int ompi_osc_ucx_rput(const void *origin_addr, int origin_count,
     OSC_UCX_GET_DEFAULT_EP(ep, module, target);
     opal_common_ucx_wpmem_t *mem = module->mem;
     uint64_t remote_addr = (module->state_addrs[target]) + OSC_UCX_STATE_REQ_FLAG_OFFSET;
-    ompi_osc_ucx_request_t *ucx_req = NULL;
+    ompi_osc_ucx_generic_request_t *ucx_req = NULL;
     int ret = OMPI_SUCCESS;
 
     ret = check_sync_state(module, target, true);
@@ -1126,8 +1126,8 @@ int ompi_osc_ucx_rput(const void *origin_addr, int origin_count,
         return ret;
     }
 
-    OMPI_OSC_UCX_REQUEST_ALLOC(win, ucx_req);
-    ucx_req->module = module;
+    OMPI_OSC_UCX_GENERIC_REQUEST_ALLOC(win, ucx_req, RPUT_REQ);
+    ucx_req->super.module = module;
 
     OSC_UCX_INCREMENT_OUTSTANDING_NB_OPS(module);
     ret = opal_common_ucx_wpmem_flush_ep_nb(mem, target, req_completion, ucx_req, ep);
@@ -1151,7 +1151,7 @@ int ompi_osc_ucx_rput(const void *origin_addr, int origin_count,
         }
     }
 
-    *request = &ucx_req->super;
+    *request = &ucx_req->super.super;
 
     return ret;
 }
@@ -1166,7 +1166,7 @@ int ompi_osc_ucx_rget(void *origin_addr, int origin_count,
     OSC_UCX_GET_DEFAULT_EP(ep, module, target);
     opal_common_ucx_wpmem_t *mem = module->mem;
     uint64_t remote_addr = (module->state_addrs[target]) + OSC_UCX_STATE_REQ_FLAG_OFFSET;
-    ompi_osc_ucx_request_t *ucx_req = NULL;
+    ompi_osc_ucx_generic_request_t *ucx_req = NULL;
     int ret = OMPI_SUCCESS;
 
     ret = check_sync_state(module, target, true);
@@ -1182,8 +1182,8 @@ int ompi_osc_ucx_rget(void *origin_addr, int origin_count,
         return ret;
     }
 
-    OMPI_OSC_UCX_REQUEST_ALLOC(win, ucx_req);
-    ucx_req->module = module;
+    OMPI_OSC_UCX_GENERIC_REQUEST_ALLOC(win, ucx_req, RGET_REQ);
+    ucx_req->super.module = module;
 
     OSC_UCX_INCREMENT_OUTSTANDING_NB_OPS(module);
     ret = opal_common_ucx_wpmem_flush_ep_nb(mem, target, req_completion, ucx_req, ep);
@@ -1207,7 +1207,7 @@ int ompi_osc_ucx_rget(void *origin_addr, int origin_count,
         }
     }
 
-    *request = &ucx_req->super;
+    *request = &ucx_req->super.super;
 
     return ret;
 }
@@ -1218,7 +1218,7 @@ int ompi_osc_ucx_raccumulate(const void *origin_addr, int origin_count,
                              struct ompi_datatype_t *target_dt, struct ompi_op_t *op,
                              struct ompi_win_t *win, struct ompi_request_t **request) {
     ompi_osc_ucx_module_t *module = (ompi_osc_ucx_module_t*) win->w_osc_module;
-    ompi_osc_ucx_request_t *ucx_req = NULL;
+    ompi_osc_ucx_accumulate_request_t *ucx_req = NULL;
     int ret = OMPI_SUCCESS;
 
     ret = check_sync_state(module, target, true);
@@ -1226,8 +1226,8 @@ int ompi_osc_ucx_raccumulate(const void *origin_addr, int origin_count,
         return ret;
     }
 
-    OMPI_OSC_UCX_REQUEST_ALLOC(win, ucx_req);
-    ucx_req->module = module;
+    OMPI_OSC_UCX_ACCUMULATE_REQUEST_ALLOC(win, ucx_req);
+    ucx_req->super.module = module;
     assert(NULL != ucx_req);
 
     ret = accumulate_req(origin_addr, origin_count, origin_dt, target, target_disp,
@@ -1237,7 +1237,7 @@ int ompi_osc_ucx_raccumulate(const void *origin_addr, int origin_count,
         return ret;
     }
 
-    *request = &ucx_req->super;
+    *request = &ucx_req->super.super;
 
     return ret;
 }
@@ -1251,7 +1251,7 @@ int ompi_osc_ucx_rget_accumulate(const void *origin_addr, int origin_count,
                                  struct ompi_op_t *op, struct ompi_win_t *win,
                                  struct ompi_request_t **request) {
     ompi_osc_ucx_module_t *module = (ompi_osc_ucx_module_t*) win->w_osc_module;
-    ompi_osc_ucx_request_t *ucx_req = NULL;
+    ompi_osc_ucx_accumulate_request_t *ucx_req = NULL;
     int ret = OMPI_SUCCESS;
 
     ret = check_sync_state(module, target, true);
@@ -1259,8 +1259,8 @@ int ompi_osc_ucx_rget_accumulate(const void *origin_addr, int origin_count,
         return ret;
     }
 
-    OMPI_OSC_UCX_REQUEST_ALLOC(win, ucx_req);
-    ucx_req->module = module;
+    OMPI_OSC_UCX_ACCUMULATE_REQUEST_ALLOC(win, ucx_req);
+    ucx_req->super.module = module;
     assert(NULL != ucx_req);
 
     ret = get_accumulate_req(origin_addr, origin_count, origin_datatype,
@@ -1272,7 +1272,7 @@ int ompi_osc_ucx_rget_accumulate(const void *origin_addr, int origin_count,
         return ret;
     }
 
-    *request = &ucx_req->super;
+    *request = &ucx_req->super.super;
 
     return ret;
 }
@@ -1288,47 +1288,47 @@ static inline int ompi_osc_ucx_acc_rputget(void *stage_addr, int stage_count,
     OSC_UCX_GET_DEFAULT_EP(ep, module, target);
     opal_common_ucx_wpmem_t *mem = module->mem;
     uint64_t remote_addr = (module->state_addrs[target]) + OSC_UCX_STATE_REQ_FLAG_OFFSET;
-    ompi_osc_ucx_request_t *ucx_req = NULL;
+    ompi_osc_ucx_accumulate_request_t *ucx_req = NULL;
     bool sync_check;
     int ret = OMPI_SUCCESS;
     CHECK_DYNAMIC_WIN(remote_addr, module, target, ret, true);
 
     if (acc_type != NONE) {
-        OMPI_OSC_UCX_REQUEST_ALLOC(win, ucx_req);
+        OMPI_OSC_UCX_ACCUMULATE_REQUEST_ALLOC(win, ucx_req);
         assert(NULL != ucx_req);
-        ucx_req->acc.op = op;
-        ucx_req->acc.acc_type = acc_type;
-        ucx_req->acc.phase = phase;
-        ucx_req->module = module;
-        ucx_req->acc.target = target;
-        ucx_req->acc.lock_acquired = lock_acquired;
-        ucx_req->acc.win = win;
-        ucx_req->acc.origin_addr = origin_addr;
-        ucx_req->acc.origin_count = origin_count;
+        ucx_req->op = op;
+        ucx_req->acc_type = acc_type;
+        ucx_req->phase = phase;
+        ucx_req->super.module = module;
+        ucx_req->target = target;
+        ucx_req->lock_acquired = lock_acquired;
+        ucx_req->win = win;
+        ucx_req->origin_addr = origin_addr;
+        ucx_req->origin_count = origin_count;
         if (origin_dt != NULL) {
-            ucx_req->acc.origin_dt = origin_dt;
+            ucx_req->origin_dt = origin_dt;
             if (!ompi_datatype_is_predefined(origin_dt)) {
-                OBJ_RETAIN(ucx_req->acc.origin_dt);
+                OBJ_RETAIN(ucx_req->origin_dt);
             }
         }
-        ucx_req->acc.stage_addr = stage_addr;
-        ucx_req->acc.stage_count = stage_count;
+        ucx_req->stage_addr = stage_addr;
+        ucx_req->stage_count = stage_count;
         if (stage_dt != NULL) {
-            ucx_req->acc.stage_dt = stage_dt;
+            ucx_req->stage_dt = stage_dt;
             if (!ompi_datatype_is_predefined(stage_dt)) {
-                OBJ_RETAIN(ucx_req->acc.stage_dt);
+                OBJ_RETAIN(ucx_req->stage_dt);
             }
         }
-        ucx_req->acc.target = target;
+        ucx_req->target = target;
         if (target_dt != NULL) {
-            ucx_req->acc.target_dt = target_dt;
+            ucx_req->target_dt = target_dt;
             if (!ompi_datatype_is_predefined(target_dt)) {
-                OBJ_RETAIN(ucx_req->acc.target_dt);
+                OBJ_RETAIN(ucx_req->target_dt);
             }
         }
-        ucx_req->acc.target_disp = target_disp;
-        ucx_req->acc.target_count = target_count;
-        ucx_req->acc.free_ptr = NULL;
+        ucx_req->target_disp = target_disp;
+        ucx_req->target_count = target_count;
+        ucx_req->free_ptr = NULL;
     }
     sync_check = module->skip_sync_check;
     module->skip_sync_check = true; /* we already hold the acc lock, so no need for sync check*/
@@ -1478,39 +1478,41 @@ static int ompi_osc_ucx_get_accumulate_nonblocking(const void *origin_addr, int 
 }
 
 void req_completion(void *request) {
-    ompi_osc_ucx_request_t *req = (ompi_osc_ucx_request_t *)request;
+    ompi_osc_ucx_generic_request_t *ucx_req = (ompi_osc_ucx_generic_request_t *)request;
     int ret = OMPI_SUCCESS;
-    ompi_osc_ucx_module_t *module = req->module;
-    if (req->acc.acc_type != NONE) {
-        assert(req->acc.phase != ACC_INIT);
+    ompi_osc_ucx_module_t *module = ucx_req->super.module;
+    if (ucx_req->super.request_type == ACCUMULATE_REQ) {
+        /* This is an accumulate request */
+        ompi_osc_ucx_accumulate_request_t *req = (ompi_osc_ucx_accumulate_request_t *)request;
+        assert(req->phase != ACC_INIT);
         void *free_addr = NULL;
         bool release_lock = false;
         ptrdiff_t temp_lb, temp_extent;
-        const void *origin_addr = req->acc.origin_addr;
-        int origin_count = req->acc.origin_count;
-        struct ompi_datatype_t *origin_dt = req->acc.origin_dt;
-        void *temp_addr = req->acc.stage_addr;
-        int temp_count = req->acc.stage_count;
-        struct ompi_datatype_t *temp_dt = req->acc.stage_dt;
-        int target = req->acc.target;
-        int target_count = req->acc.target_count;
-        int target_disp = req->acc.target_disp;
-        struct ompi_datatype_t *target_dt = req->acc.target_dt;
-        struct ompi_win_t *win = req->acc.win;
-        struct ompi_op_t *op = req->acc.op;
+        const void *origin_addr = req->origin_addr;
+        int origin_count = req->origin_count;
+        struct ompi_datatype_t *origin_dt = req->origin_dt;
+        void *temp_addr = req->stage_addr;
+        int temp_count = req->stage_count;
+        struct ompi_datatype_t *temp_dt = req->stage_dt;
+        int target = req->target;
+        int target_count = req->target_count;
+        int target_disp = req->target_disp;
+        struct ompi_datatype_t *target_dt = req->target_dt;
+        struct ompi_win_t *win = req->win;
+        struct ompi_op_t *op = req->op;
 
-        if (req->acc.phase != ACC_FINALIZE) {
+        if (req->phase != ACC_FINALIZE) {
             /* Avoid calling flush while we are already in progress */
             module->mem->skip_periodic_flush = true;
             module->state_mem->skip_periodic_flush = true;
         }
 
-        switch (req->acc.phase) {
+        switch (req->phase) {
             case ACC_FINALIZE:
             {
-                if (req->acc.free_ptr != NULL) {
-                    free(req->acc.free_ptr);
-                    req->acc.free_ptr = NULL;
+                if (req->free_ptr != NULL) {
+                    free(req->free_ptr);
+                    req->free_ptr = NULL;
                 }
                 if (origin_dt != NULL && !ompi_datatype_is_predefined(origin_dt)) {
                     OBJ_RELEASE(origin_dt);
@@ -1613,7 +1615,7 @@ void req_completion(void *request) {
                     free(origin_ucx_iov);
                 }
             
-                if (req->acc.acc_type == GET_ACCUMULATE) {
+                if (req->acc_type == GET_ACCUMULATE) {
                     /* Do fence to make sure target results are received before
                      * writing into target */
                     ret = opal_common_ucx_wpmem_fence(module->mem);
@@ -1647,16 +1649,15 @@ void req_completion(void *request) {
             /* Ordering between previous put/get operations and unlock will be realized
              * through the ucp fence inside the finalize function */
             ompi_osc_ucx_nonblocking_ops_finalize(module, target,
-                    req->acc.lock_acquired, win, free_addr);
+                    req->lock_acquired, win, free_addr);
         }
 
-        if (req->acc.phase != ACC_FINALIZE) {
+        if (req->phase != ACC_FINALIZE) {
             module->mem->skip_periodic_flush = false;
             module->state_mem->skip_periodic_flush = false;
         }
     }
-
     OSC_UCX_DECREMENT_OUTSTANDING_NB_OPS(module);
-    ompi_request_complete(&(req->super), true);
+    ompi_request_complete(&(ucx_req->super.super), true);
     assert(module->ctx->num_incomplete_req_ops >= 0);
 }

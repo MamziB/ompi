@@ -483,9 +483,20 @@ static int component_select(struct ompi_win_t *win, void **base, size_t size, in
 
         OBJ_CONSTRUCT(&mca_osc_ucx_component.requests, opal_free_list_t);
         ret = opal_free_list_init (&mca_osc_ucx_component.requests,
-                                   sizeof(ompi_osc_ucx_request_t),
+                                   sizeof(ompi_osc_ucx_generic_request_t),
                                    opal_cache_line_size,
-                                   OBJ_CLASS(ompi_osc_ucx_request_t),
+                                   OBJ_CLASS(ompi_osc_ucx_generic_request_t),
+                                   0, 0, 8, 0, 8, NULL, 0, NULL, NULL, NULL);
+        if (OMPI_SUCCESS != ret) {
+            OSC_UCX_VERBOSE(1, "opal_free_list_init failed: %d", ret);
+            goto select_unlock;
+        }
+
+        OBJ_CONSTRUCT(&mca_osc_ucx_component.accumulate_requests, opal_free_list_t);
+        ret = opal_free_list_init (&mca_osc_ucx_component.accumulate_requests,
+                                   sizeof(ompi_osc_ucx_accumulate_request_t),
+                                   opal_cache_line_size,
+                                   OBJ_CLASS(ompi_osc_ucx_accumulate_request_t),
                                    0, 0, 8, 0, 8, NULL, 0, NULL, NULL, NULL);
         if (OMPI_SUCCESS != ret) {
             OSC_UCX_VERBOSE(1, "opal_free_list_init failed: %d", ret);
@@ -977,14 +988,14 @@ inline int ompi_osc_ucx_nonblocking_ops_finalize(ompi_osc_ucx_module_t *module, 
     ucp_ep_h *ep;
     OSC_UCX_GET_DEFAULT_EP(ep, module, target);
     int ret = OMPI_SUCCESS;
-    ompi_osc_ucx_request_t *ucx_req = NULL;
+    ompi_osc_ucx_accumulate_request_t *ucx_req = NULL;
 
-    OMPI_OSC_UCX_REQUEST_ALLOC(win, ucx_req);
+    OMPI_OSC_UCX_ACCUMULATE_REQUEST_ALLOC(win, ucx_req);
     assert(NULL != ucx_req);
-    ucx_req->acc.free_ptr = free_ptr;
-    ucx_req->acc.phase = ACC_FINALIZE;
-    ucx_req->acc.acc_type = ANY;
-    ucx_req->module = module;
+    ucx_req->free_ptr = free_ptr;
+    ucx_req->phase = ACC_FINALIZE;
+    ucx_req->acc_type = ANY;
+    ucx_req->super.module = module;
 
     /* Fence any still active operations */
     ret = opal_common_ucx_wpmem_fence(module->mem);

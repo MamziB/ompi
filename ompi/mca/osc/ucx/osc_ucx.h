@@ -33,6 +33,7 @@ typedef struct ompi_osc_ucx_component {
     opal_common_ucx_wpool_t *wpool;
     bool enable_mpi_threads;
     opal_free_list_t requests; /* request free list for the r* communication variants */
+    opal_free_list_t accumulate_requests; /* request free list for the r* communication variants */
     bool env_initialized; /* UCX environment is initialized or not */
     int comm_world_size;
     ucp_ep_h *endpoints;
@@ -173,7 +174,7 @@ extern bool thread_enabled;
         _ep_ptr = (ucp_ep_h *)&(OSC_UCX_GET_EP(_module, _target));          \
     }
 
-extern int ompi_osc_ucx_outstanding_ops_flush_threshold;
+extern size_t ompi_osc_ucx_outstanding_ops_flush_threshold;
 
 int ompi_osc_ucx_shared_query(struct ompi_win_t *win, int rank, size_t *size,
         int *disp_unit, void * baseptr);
