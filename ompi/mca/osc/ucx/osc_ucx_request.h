@@ -142,6 +142,6 @@ OBJ_CLASS_DECLARATION(ompi_osc_ucx_accumulate_request_t);
         }                                                                               \
     } while (0)
 
-void req_completion(void *request);
+void ompi_osc_ucx_req_completion(void *request);
 
 #endif /* OMPI_OSC_UCX_REQUEST_H */

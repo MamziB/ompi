@@ -457,7 +457,7 @@ static int do_atomic_op_intrinsic(
         uint64_t value = 0;
         if ((count - 1) == i && NULL != ucx_req) {
             // the last item is used to feed the request, if needed
-            user_req_cb = &req_completion;
+            user_req_cb = &ompi_osc_ucx_req_completion;
             user_req_ptr = ucx_req;
             // issue a fence if this is the last but not the only element
             if (0 < i) {
@@ -1130,7 +1130,7 @@ int ompi_osc_ucx_rput(const void *origin_addr, int origin_count,
     ucx_req->super.module = module;
 
     OSC_UCX_INCREMENT_OUTSTANDING_NB_OPS(module);
-    ret = opal_common_ucx_wpmem_flush_ep_nb(mem, target, req_completion, ucx_req, ep);
+    ret = opal_common_ucx_wpmem_flush_ep_nb(mem, target, ompi_osc_ucx_req_completion, ucx_req, ep);
 
     if (ret != OMPI_SUCCESS) {
         /* fallback to using an atomic op to acquire a request handle */
@@ -1144,7 +1144,7 @@ int ompi_osc_ucx_rput(const void *origin_addr, int origin_count,
         ret = opal_common_ucx_wpmem_fetch_nb(mem, UCP_ATOMIC_FETCH_OP_FADD,
                                             0, target, &(module->req_result),
                                             sizeof(uint64_t), remote_addr & (~0x7),
-                                            req_completion, ucx_req, ep);
+                                            ompi_osc_ucx_req_completion, ucx_req, ep);
         if (ret != OMPI_SUCCESS) {
             OMPI_OSC_UCX_REQUEST_RETURN(ucx_req);
             return ret;
@@ -1186,7 +1186,7 @@ int ompi_osc_ucx_rget(void *origin_addr, int origin_count,
     ucx_req->super.module = module;
 
     OSC_UCX_INCREMENT_OUTSTANDING_NB_OPS(module);
-    ret = opal_common_ucx_wpmem_flush_ep_nb(mem, target, req_completion, ucx_req, ep);
+    ret = opal_common_ucx_wpmem_flush_ep_nb(mem, target, ompi_osc_ucx_req_completion, ucx_req, ep);
 
     if (ret != OMPI_SUCCESS) {
         /* fallback to using an atomic op to acquire a request handle */
@@ -1200,7 +1200,7 @@ int ompi_osc_ucx_rget(void *origin_addr, int origin_count,
         ret = opal_common_ucx_wpmem_fetch_nb(mem, UCP_ATOMIC_FETCH_OP_FADD,
                                             0, target, &(module->req_result),
                                             sizeof(uint64_t), remote_addr & (~0x7),
-                                            req_completion, ucx_req, ep);
+                                            ompi_osc_ucx_req_completion, ucx_req, ep);
         if (ret != OMPI_SUCCESS) {
             OMPI_OSC_UCX_REQUEST_RETURN(ucx_req);
             return ret;
@@ -1347,7 +1347,7 @@ static inline int ompi_osc_ucx_acc_rputget(void *stage_addr, int stage_count,
     module->skip_sync_check = sync_check;
     if (acc_type != NONE) {
         OSC_UCX_INCREMENT_OUTSTANDING_NB_OPS(module);
-        ret = opal_common_ucx_wpmem_flush_ep_nb(mem, target, req_completion, ucx_req, ep);
+        ret = opal_common_ucx_wpmem_flush_ep_nb(mem, target, ompi_osc_ucx_req_completion, ucx_req, ep);
 
         if (ret != OMPI_SUCCESS) {
             /* fallback to using an atomic op to acquire a request handle */
@@ -1360,7 +1360,7 @@ static inline int ompi_osc_ucx_acc_rputget(void *stage_addr, int stage_count,
             ret = opal_common_ucx_wpmem_fetch_nb(mem, UCP_ATOMIC_FETCH_OP_FADD,
                                                 0, target, &(module->req_result),
                                                 sizeof(uint64_t), remote_addr & (~0x7),
-                                                req_completion, ucx_req, ep);
+                                                ompi_osc_ucx_req_completion, ucx_req, ep);
             if (ret != OMPI_SUCCESS) {
                 OMPI_OSC_UCX_REQUEST_RETURN(ucx_req);
                 return ret;
@@ -1477,7 +1477,7 @@ static int ompi_osc_ucx_get_accumulate_nonblocking(const void *origin_addr, int 
     return ret;
 }
 
-void req_completion(void *request) {
+void ompi_osc_ucx_req_completion(void *request) {
     ompi_osc_ucx_generic_request_t *ucx_req = (ompi_osc_ucx_generic_request_t *)request;
     int ret = OMPI_SUCCESS;
     ompi_osc_ucx_module_t *module = ucx_req->super.module;

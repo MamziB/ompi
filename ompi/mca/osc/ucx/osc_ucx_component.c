@@ -1020,7 +1020,7 @@ inline int ompi_osc_ucx_nonblocking_ops_finalize(ompi_osc_ucx_module_t *module, 
         ret = opal_common_ucx_wpmem_fetch_nb(module->state_mem,
                                         UCP_ATOMIC_FETCH_OP_SWAP, TARGET_LOCK_UNLOCKED,
                                         target, &(module->req_result), sizeof(module->req_result),
-                                        remote_addr, req_completion, ucx_req, ep);
+                                        remote_addr, ompi_osc_ucx_req_completion, ucx_req, ep);
         if (ret != OMPI_SUCCESS) {
             OSC_UCX_VERBOSE(1, "opal_common_ucx_wpmem_fetch_nb failed: %d", ret);
             OMPI_OSC_UCX_REQUEST_RETURN(ucx_req);
@@ -1030,14 +1030,14 @@ inline int ompi_osc_ucx_nonblocking_ops_finalize(ompi_osc_ucx_module_t *module, 
         /* Lock is not acquired, but still, we need to know when the 
          * acc is finalized so that we can free the temp buffers */
         OSC_UCX_INCREMENT_OUTSTANDING_NB_OPS(module);
-        ret = opal_common_ucx_wpmem_flush_ep_nb(module->mem, target, req_completion, ucx_req, ep);
+        ret = opal_common_ucx_wpmem_flush_ep_nb(module->mem, target, ompi_osc_ucx_req_completion, ucx_req, ep);
 
         if (ret != OMPI_SUCCESS) {
             /* fallback to using an atomic op to acquire a request handle */
             ret = opal_common_ucx_wpmem_fetch_nb(module->mem, UCP_ATOMIC_FETCH_OP_FADD,
                                                 0, target, &(module->req_result),
                                                 sizeof(uint64_t), remote_addr & (~0x7),
-                                                req_completion, ucx_req, ep);
+                                                ompi_osc_ucx_req_completion, ucx_req, ep);
             if (ret != OMPI_SUCCESS) {
                 OMPI_OSC_UCX_REQUEST_RETURN(ucx_req);
                 return ret;
