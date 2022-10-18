@@ -177,18 +177,29 @@ static int component_register(void) {
 
     thread_enabled = opal_using_threads();
     mca_osc_ucx_component.acc_single_intrinsic = false;
+
     opal_asprintf(&description_str, "Enable optimizations for MPI_Fetch_and_op, MPI_Accumulate, etc for codes "
              "that will not use anything more than a single predefined datatype (default: %s)",
              mca_osc_ucx_component.acc_single_intrinsic  ? "true" : "false");
     (void) mca_base_component_var_register(&mca_osc_ucx_component.super.osc_version, "acc_single_intrinsic",
                                            description_str, MCA_BASE_VAR_TYPE_BOOL, NULL, 0, 0, OPAL_INFO_LVL_5,
                                            MCA_BASE_VAR_SCOPE_GROUP, &mca_osc_ucx_component.acc_single_intrinsic);
+
+    opal_asprintf(&description_str, "Enable nonblocking MPI_Accumulate and MPI_Get_accumulate  (default: %s)",
+                                           enable_nonblocking_accumulate  ? "true" : "false");
     (void) mca_base_component_var_register(&mca_osc_ucx_component.super.osc_version, "enable_nonblocking_accumulate",
                                            description_str, MCA_BASE_VAR_TYPE_BOOL, NULL, 0, 0, OPAL_INFO_LVL_5,
                                            MCA_BASE_VAR_SCOPE_GROUP, &enable_nonblocking_accumulate);
+
+    opal_asprintf(&description_str, "Enable optimizations for multi-threaded applications by allocating a separate worker "
+                                    "for each thread and a separate endpoint for each window  (default: %s)",
+                                         thread_enabled  ? "true" : "false");
     (void) mca_base_component_var_register(&mca_osc_ucx_component.super.osc_version, "enable_wpool_thread_multiple",
                                            description_str, MCA_BASE_VAR_TYPE_BOOL, NULL, 0, 0, OPAL_INFO_LVL_5,
                                            MCA_BASE_VAR_SCOPE_GROUP, &thread_enabled);
+
+    opal_asprintf(&description_str, "Threshold on number of nonblocking accumulate calls on which there is a  periodical "
+                                        "flush (default: %d)", ompi_osc_ucx_outstanding_ops_flush_threshold);
     (void) mca_base_component_var_register(&mca_osc_ucx_component.super.osc_version, "outstanding_ops_flush_threshold",
                                            description_str, MCA_BASE_VAR_TYPE_INT, NULL, 0, 0, OPAL_INFO_LVL_5,
                                            MCA_BASE_VAR_SCOPE_GROUP, &ompi_osc_ucx_outstanding_ops_flush_threshold);
