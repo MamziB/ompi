@@ -165,10 +165,10 @@ typedef struct ompi_osc_ucx_lock {
 #define OSC_UCX_GET_EP(_module, rank_) (mca_osc_ucx_component.endpoints[_module->comm_world_ranks[rank_]])
 #define OSC_UCX_GET_DISP(module_, rank_) ((module_->disp_unit < 0) ? module_->disp_units[rank_] : module_->disp_unit)
 
-extern bool thread_enabled;
+extern bool opal_common_ucx_thread_enabled;
 
 #define OSC_UCX_GET_DEFAULT_EP(_ep_ptr, _module, _target)                   \
-    if (thread_enabled) {                  \
+    if (opal_common_ucx_thread_enabled) {                  \
         _ep_ptr = NULL;                                                     \
     } else {                                                                \
         _ep_ptr = (ucp_ep_h *)&(OSC_UCX_GET_EP(_module, _target));          \
