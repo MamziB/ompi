@@ -561,7 +561,8 @@ select_unlock:
     /* fill in the function pointer part */
     memcpy(module, &ompi_osc_ucx_module_template, sizeof(ompi_osc_base_module_t));
 
-    if (enable_nonblocking_accumulate) {
+    /* TODO Provide support for nonblocking operations with dynamic windows */
+    if (enable_nonblocking_accumulate && flavor != MPI_WIN_FLAVOR_DYNAMIC) {
         module->super.osc_accumulate = ompi_osc_ucx_accumulate_nb;
         module->super.osc_get_accumulate = ompi_osc_ucx_get_accumulate_nb;
     }
