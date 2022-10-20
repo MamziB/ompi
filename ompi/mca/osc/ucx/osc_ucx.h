@@ -135,6 +135,7 @@ typedef struct ompi_osc_ucx_module {
     bool lock_all_is_nocheck;
     bool no_locks;
     bool acc_single_intrinsic;
+    uint64_t acc_lock_refcnt;
     opal_common_ucx_ctx_t *ctx;
     opal_common_ucx_wpmem_t *mem;
     opal_common_ucx_wpmem_t *state_mem;

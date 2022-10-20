@@ -840,6 +840,7 @@ select_unlock:
     OBJ_CONSTRUCT(&module->pending_posts, opal_list_t);
     module->start_grp_ranks = NULL;
     module->lock_all_is_nocheck = false;
+    module->acc_lock_refcnt = 0;
 
     if (!module->no_locks) {
         OBJ_CONSTRUCT(&module->outstanding_locks, opal_hash_table_t);
@@ -930,23 +931,26 @@ inline int ompi_osc_ucx_state_lock(
     int ret = OMPI_SUCCESS;
 
     if (force_lock || ompi_osc_need_acc_lock(module, target)) {
-        for (;;) {
-            ret = opal_common_ucx_wpmem_cmpswp(module->state_mem,
-                                            TARGET_LOCK_UNLOCKED, TARGET_LOCK_EXCLUSIVE,
-                                            target, &result_value, sizeof(result_value),
-                                            remote_addr, ep);
-            if (ret != OMPI_SUCCESS) {
-                OSC_UCX_VERBOSE(1, "opal_common_ucx_mem_cmpswp failed: %d", ret);
-                return OMPI_ERROR;
-            }
-            if (result_value == TARGET_LOCK_UNLOCKED) {
-                break;
-            }
+        if (module->acc_lock_refcnt == 0) {
+            for (;;) {
+                ret = opal_common_ucx_wpmem_cmpswp(module->state_mem,
+                                                TARGET_LOCK_UNLOCKED, TARGET_LOCK_EXCLUSIVE,
+                                                target, &result_value, sizeof(result_value),
+                                                remote_addr, ep);
+                if (ret != OMPI_SUCCESS) {
+                    OSC_UCX_VERBOSE(1, "opal_common_ucx_mem_cmpswp failed: %d", ret);
+                    return OMPI_ERROR;
+                }
+                if (result_value == TARGET_LOCK_UNLOCKED) {
+                    break;
+                }
 
-            opal_common_ucx_wpool_progress(mca_osc_ucx_component.wpool);
+                opal_common_ucx_wpool_progress(mca_osc_ucx_component.wpool);
+            }
         }
 
         *lock_acquired = true;
+        module->acc_lock_refcnt++;
     } else {
         *lock_acquired = false;
     }
@@ -973,11 +977,15 @@ inline int ompi_osc_ucx_state_unlock(
             return OMPI_ERROR;
         }
 
-        ret = opal_common_ucx_wpmem_fetch(module->state_mem,
-                                        UCP_ATOMIC_FETCH_OP_SWAP, TARGET_LOCK_UNLOCKED,
-                                        target, &result_value, sizeof(result_value),
-                                        remote_addr, ep);
-        assert(result_value == TARGET_LOCK_EXCLUSIVE);
+        if (module->acc_lock_refcnt == 1) {
+            ret = opal_common_ucx_wpmem_fetch(module->state_mem,
+                                            UCP_ATOMIC_FETCH_OP_SWAP, TARGET_LOCK_UNLOCKED,
+                                            target, &result_value, sizeof(result_value),
+                                            remote_addr, ep);
+            assert(result_value == TARGET_LOCK_EXCLUSIVE);
+        }
+        module->acc_lock_refcnt--;
+        assert(module->acc_lock_refcnt >= 0);
     } else if (NULL != free_ptr){
         /* flush before freeing the buffer */
         ret = opal_common_ucx_ctx_flush(module->ctx, OPAL_COMMON_UCX_SCOPE_EP, target);
