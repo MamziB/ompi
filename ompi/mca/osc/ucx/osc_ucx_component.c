@@ -319,12 +319,18 @@ static int component_init(bool enable_progress_threads, bool enable_mpi_threads)
 }
 
 static int component_finalize(void) {
+
+    ompi_mpi_comm_world.comm.c_coll->coll_barrier(&ompi_mpi_comm_world.comm,
+            ompi_mpi_comm_world.comm.c_coll->coll_barrier_module);
+
     if (!opal_common_ucx_thread_enabled) {
         int i;
         for (i = 0; i < mca_osc_ucx_component.comm_world_size; i++) {
             ucp_ep_h ep = mca_osc_ucx_component.endpoints[i];
             if (ep != NULL) {
                 ucp_ep_destroy(ep);
+                opal_common_ucx_ep_counts--;
+                assert(opal_common_ucx_ep_counts>=0);
             }
         }
         free(mca_osc_ucx_component.endpoints);
@@ -334,6 +340,11 @@ static int component_finalize(void) {
         opal_common_ucx_wpool_finalize(mca_osc_ucx_component.wpool);
     }
     opal_common_ucx_wpool_free(mca_osc_ucx_component.wpool);
+
+    ompi_mpi_comm_world.comm.c_coll->coll_barrier(&ompi_mpi_comm_world.comm,
+            ompi_mpi_comm_world.comm.c_coll->coll_barrier_module);
+
+    assert(opal_common_ucx_ep_counts == 0);
     return OMPI_SUCCESS;
 }
 

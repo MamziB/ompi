@@ -32,6 +32,7 @@ __thread int initialized = 0;
 #endif
 
 bool opal_common_ucx_thread_enabled = false;
+int64_t opal_common_ucx_ep_counts = 0;
 
 static _ctx_record_t *_tlocal_add_ctx_rec(opal_common_ucx_ctx_t *ctx);
 static inline _ctx_record_t *_tlocal_get_ctx_rec(opal_tsd_tracked_key_t tls_key);
@@ -102,6 +103,8 @@ static void _winfo_destructor(opal_common_ucx_winfo_t *winfo)
             for (i = 0; i < winfo->comm_size; i++) {
                 if (NULL != winfo->endpoints[i]) {
                     ucp_ep_destroy(winfo->endpoints[i]);
+                    opal_common_ucx_ep_counts--;
+                    assert(opal_common_ucx_ep_counts >= 0);
                 }
                 assert(winfo->inflight_ops[i] == 0);
             }
@@ -326,9 +329,27 @@ static opal_common_ucx_winfo_t *_wpool_get_winfo(opal_common_ucx_wpool_t *wpool,
     return winfo;
 }
 
+/* Remove the winfo from active workers and add it to idle workers */
 static void _wpool_put_winfo(opal_common_ucx_wpool_t *wpool, opal_common_ucx_winfo_t *winfo)
 {
     opal_mutex_lock(&wpool->mutex);
+    if (winfo->comm_size != 0) {
+        size_t i;
+        if (opal_common_ucx_thread_enabled) {
+            for (i = 0; i < winfo->comm_size; i++) {
+                if (NULL != winfo->endpoints[i]) {
+                    ucp_ep_destroy(winfo->endpoints[i]);
+                    opal_common_ucx_ep_counts--;
+                    assert(opal_common_ucx_ep_counts >= 0);
+                }
+                assert(winfo->inflight_ops[i] == 0);
+            }
+        }
+        free(winfo->endpoints);
+        free(winfo->inflight_ops);
+    }
+    winfo->endpoints = NULL;
+    winfo->comm_size = 0;
     opal_list_remove_item(&wpool->active_workers, &winfo->super);
     opal_list_prepend(&wpool->idle_workers, &winfo->super);
     opal_mutex_unlock(&wpool->mutex);
@@ -632,6 +653,7 @@ static int _tlocal_ctx_connect(_ctx_record_t *ctx_rec, int target)
     memset(&ep_params, 0, sizeof(ucp_ep_params_t));
     ep_params.field_mask = UCP_EP_PARAM_FIELD_REMOTE_ADDRESS;
 
+    assert(winfo->endpoints[target] == NULL);
     opal_mutex_lock(&winfo->mutex);
     displ = gctx->recv_worker_displs[target];
     ep_params.address = (ucp_address_t *) &(gctx->recv_worker_addrs[displ]);
@@ -641,7 +663,9 @@ static int _tlocal_ctx_connect(_ctx_record_t *ctx_rec, int target)
         opal_mutex_unlock(&winfo->mutex);
         return OPAL_ERROR;
     }
+    opal_common_ucx_ep_counts++;
     opal_mutex_unlock(&winfo->mutex);
+    assert(winfo->endpoints[target] != NULL);
     return OPAL_SUCCESS;
 }
 

@@ -587,10 +587,6 @@ static int ompi_mpi_instance_init_common (int argc, char **argv)
         return ompi_instance_print_error ("mca_coll_base_find_available() failed", ret);
     }
 
-    if (OMPI_SUCCESS != (ret = ompi_osc_base_find_available (OPAL_ENABLE_PROGRESS_THREADS, ompi_mpi_thread_multiple))) {
-        return ompi_instance_print_error ("ompi_osc_base_find_available() failed", ret);
-    }
-
     /* io and topo components are not selected here -- see comment
        above about the io and topo frameworks being loaded lazily */
 
@@ -615,6 +611,10 @@ static int ompi_mpi_instance_init_common (int argc, char **argv)
     if (OMPI_SUCCESS != (ret = ompi_comm_init ())) {
         opal_mutex_unlock (&instance_lock);
         return ompi_instance_print_error ("ompi_comm_init() failed", ret);
+    }
+
+    if (OMPI_SUCCESS != (ret = ompi_osc_base_find_available (OPAL_ENABLE_PROGRESS_THREADS, ompi_mpi_thread_multiple))) {
+        return ompi_instance_print_error ("ompi_osc_base_find_available() failed", ret);
     }
 
     /* Construct predefined keyvals */
