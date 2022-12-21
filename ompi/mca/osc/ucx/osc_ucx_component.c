@@ -280,24 +280,33 @@ static int ucp_context_init(bool enable_mt, int proc_world_size) {
 }
 
 static int component_init(bool enable_progress_threads, bool enable_mpi_threads) {
-    opal_common_ucx_support_level_t support_level = OPAL_COMMON_UCX_SUPPORT_NONE;
     mca_base_var_source_t param_source = MCA_BASE_VAR_SOURCE_DEFAULT;
     int ret = OMPI_SUCCESS,
         param = -1;
 
     mca_osc_ucx_component.enable_mpi_threads = enable_mpi_threads;
     mca_osc_ucx_component.wpool = opal_common_ucx_wpool_allocate();
+    mca_osc_ucx_component.wpool->ucp_ctx = NULL;
 
-    ret = ucp_context_init(enable_mpi_threads,  ompi_proc_world_size());
-    if (OMPI_ERROR == ret) {
+
+    if (OPAL_COMMON_UCX_SUPPORT_NONE == opal_common_ucx_support_level) {
+        /* pml layer has already decided that there is no ucx support */
         return OMPI_ERR_NOT_AVAILABLE;
     }
 
-    support_level = opal_common_ucx_support_level(mca_osc_ucx_component.wpool->ucp_ctx);
-    if (OPAL_COMMON_UCX_SUPPORT_NONE == support_level) {
-        ucp_cleanup(mca_osc_ucx_component.wpool->ucp_ctx);
-        mca_osc_ucx_component.wpool->ucp_ctx = NULL;
-        return OMPI_ERR_NOT_AVAILABLE;
+    if (OPAL_COMMON_UCX_SUPPORT_UNDEFINED == opal_common_ucx_support_level) {
+        /* pml has not decided ucx support so do it here */
+        ret = ucp_context_init(enable_mpi_threads,  ompi_proc_world_size());
+        if (OMPI_ERROR == ret) {
+            return OMPI_ERR_NOT_AVAILABLE;
+        }
+
+        opal_common_ucx_support_level = opal_common_get_ucx_support_level(mca_osc_ucx_component.wpool->ucp_ctx);
+        if (OPAL_COMMON_UCX_SUPPORT_NONE == opal_common_ucx_support_level) {
+            ucp_cleanup(mca_osc_ucx_component.wpool->ucp_ctx);
+            mca_osc_ucx_component.wpool->ucp_ctx = NULL;
+            return OMPI_ERR_NOT_AVAILABLE;
+        }
     }
 
     param = mca_base_var_find("ompi","osc","ucx","priority");
@@ -310,7 +319,7 @@ static int component_init(bool enable_progress_threads, bool enable_mpi_threads)
      * Lower priority if we have supported transports, but not supported devices.
      */
     if(MCA_BASE_VAR_SOURCE_DEFAULT == param_source) {
-        mca_osc_ucx_component.priority = (support_level == OPAL_COMMON_UCX_SUPPORT_DEVICE) ?
+        mca_osc_ucx_component.priority = (opal_common_ucx_support_level == OPAL_COMMON_UCX_SUPPORT_DEVICE) ?
                     mca_osc_ucx_component.priority : 9;
     }
     OSC_UCX_VERBOSE(2, "returning priority %d", mca_osc_ucx_component.priority);
@@ -506,6 +515,13 @@ static int component_select(struct ompi_win_t *win, void **base, size_t size, in
          * As not all of the MPI applications are using One-Sided functionality
          * we don't want to initialize in the component_init()
          */
+
+        if (NULL == mca_osc_ucx_component.wpool->ucp_ctx) {
+            ret = ucp_context_init(mca_osc_ucx_component.enable_mpi_threads,  ompi_proc_world_size());
+            if (OMPI_ERROR == ret) {
+                return OMPI_ERR_NOT_AVAILABLE;
+            }
+        }
 
         OBJ_CONSTRUCT(&mca_osc_ucx_component.requests, opal_free_list_t);
         ret = opal_free_list_init (&mca_osc_ucx_component.requests,

@@ -100,6 +100,8 @@ typedef struct opal_common_ucx_del_proc {
 } opal_common_ucx_del_proc_t;
 
 typedef enum {
+    OPAL_COMMON_UCX_SUPPORT_UNDEFINED,
+
     /* No supported transports found (according to configured list of supported
        transports) */
     OPAL_COMMON_UCX_SUPPORT_NONE,
@@ -112,10 +114,11 @@ typedef enum {
 } opal_common_ucx_support_level_t;
 
 extern opal_common_ucx_module_t opal_common_ucx;
+extern opal_common_ucx_support_level_t opal_common_ucx_support_level;
 
 OPAL_DECLSPEC void opal_common_ucx_mca_register(void);
 OPAL_DECLSPEC void opal_common_ucx_mca_deregister(void);
-OPAL_DECLSPEC opal_common_ucx_support_level_t opal_common_ucx_support_level(ucp_context_h context);
+OPAL_DECLSPEC opal_common_ucx_support_level_t opal_common_get_ucx_support_level(ucp_context_h context);
 OPAL_DECLSPEC void opal_common_ucx_mca_proc_added(void);
 OPAL_DECLSPEC void opal_common_ucx_empty_complete_cb(void *request, ucs_status_t status);
 OPAL_DECLSPEC int opal_common_ucx_mca_pmix_fence(ucp_worker_h worker);

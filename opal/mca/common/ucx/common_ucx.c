@@ -40,6 +40,8 @@ opal_common_ucx_module_t opal_common_ucx =
     .opal_mem_hooks = 1,
 };
 
+opal_common_ucx_support_level_t opal_common_ucx_support_level = OPAL_COMMON_UCX_SUPPORT_UNDEFINED;
+
 static opal_mutex_t opal_common_ucx_mutex = OPAL_MUTEX_STATIC_INIT;
 
 static void opal_common_ucx_mem_release_cb(void *buf, size_t length, void *cbdata, bool from_alloc)
@@ -213,7 +215,7 @@ static bool opal_common_ucx_check_device(const char *device_name, char **device_
 }
 #endif
 
-OPAL_DECLSPEC opal_common_ucx_support_level_t opal_common_ucx_support_level(ucp_context_h context)
+OPAL_DECLSPEC opal_common_ucx_support_level_t opal_common_get_ucx_support_level(ucp_context_h context)
 {
     opal_common_ucx_support_level_t support_level = OPAL_COMMON_UCX_SUPPORT_NONE;
     static const char *support_level_names[]
